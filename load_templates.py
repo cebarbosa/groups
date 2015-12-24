@@ -26,8 +26,6 @@ def load_templates_regul(velscale):
     # to the same velocity scale of the SAURON galaxy spectrum, to determine
     # the size needed for the array which will contain the template spectra.
     miles = [x for x in os.listdir(".") if x.endswith(".fits")]
-    print miles
-    raw_input()
     hdu = pf.open(miles[0])
     ssp = hdu[0].data
     h2 = hdu[0].header
@@ -76,7 +74,7 @@ def stellar_templates(velscale):
     """ Load files with stellar library used as templates. """
     current_dir = os.getcwd()
     # Template directory is also set in config.py
-    os.chdir(template_dir)
+    os.chdir(templates_dir)
     miles = [x for x in os.listdir(".") if x.startswith("Mun") and
              x.endswith(".fits")]
     # Ordered array of metallicities
@@ -89,17 +87,15 @@ def stellar_templates(velscale):
             Zs[i] = "{0:.2f}".format(Zs[i]).replace("-", "m")
         else:
             Zs[i] = "p{0:.2f}".format(Zs[i])
-    Zs = [str(x).replace(".", "_") for x in Zs]
     # Ordered array of ages
-    Ts = list(set([x.split("T")[1].split(".fits")[0].replace("_", ".")
+    Ts = list(set([x.split("T")[1][:7]
                    for x in miles]))
     Ts.sort()
-    Ts = [str(x).replace(".", "_") for x in Ts]
     miles = []
     metal_ages = []
     for m in Zs:
         for t in Ts:
-            filename = "Mun1_30Z{0}T{1}.fits".format(m, t)
+            filename = "Mun1.30Z{0}T{1}_linear_FWHM_3.6.fits".format(m, t)
             if os.path.exists(filename):
                 miles.append(filename)
                 metal_ages.append([m.replace("_", ".").replace("p",
@@ -124,12 +120,12 @@ def emission_templates(velscale):
     """ Load files with stellar library used as templates. """
     current_dir = os.getcwd()
     # Template directory is also set in setyp.py
-    os.chdir(template_dir)
+    os.chdir(templates_dir)
     emission = [x for x in os.listdir(".") if x.startswith("emission") and
              x.endswith(".fits")]
     emission.sort()
     c = 299792.458
-    FWHM_tem = 2.1 # MILES library spectra have a resolution FWHM of 2.54A.
+    FWHM_tem = 2.54 # MILES library spectra have a resolution FWHM of 2.54A.
     # Extract the wavelength range and logarithmically rebin one spectrum
     # to the same velocity scale of the SAURON galaxy spectrum, to determine
     # the size needed for the array which will contain the template spectra.
@@ -151,15 +147,15 @@ def emission_templates(velscale):
     os.chdir(current_dir)
     return templates, logLam2, h2['CDELT1'], emission
 
-def emission_line_template(lines, velscale, res=2.54, intens=None, resamp=15,
+def emission_line_template(lines, velscale, res=3.6, intens=None, resamp=15,
                            return_log=True):
     lines = np.atleast_1d(lines)
     if intens == None:
         intens = np.ones_like(lines) * 1e-5
     current_dir = os.getcwd()
-    # Template directory is also set in setyp.py
-    os.chdir(template_dir)
-    refspec = [x for x in os.listdir(".") if x.endswith(".fits")][0]
+    os.chdir(templates_dir)
+    refspec = [x for x in os.listdir(".") if x.endswith(".fits") and
+               x.startswith("Mun")][0]
     lamb = wavelength_array(refspec)
     delta = lamb[1] - lamb[0]
     lamb2 = np.linspace(lamb[0]-delta/2., lamb[-1] + delta/2., len(lamb+1)*resamp)
@@ -197,13 +193,13 @@ def wavelength_array(spec):
     return w0 + deltaw * (np.arange(npix) + 1 - pix0)
 
 if __name__ == "__main__":
-    os.chdir(template_dir)
-    stellar_templates(velscale)
-    em_OIII = emission_line_template([5006.84, 4958.91], velscale,
-                                      intens=[1e-5,0.33e-5], return_log=0)
-    em_hbeta = emission_line_template(4861.333, velscale, return_log=0)
-    em_NI = emission_line_template(5200.257, velscale, return_log=0)
-    # make_fits(em_OIII, "emission_OIII_fwhm2.54.fits")
-    # make_fits(em_hbeta, "emission_hbeta_fwhm2.54.fits")
-    # make_fits(em_NI, "emission_NI_fwhm2.54.fits")
+    os.chdir(templates_dir)
+    templates, logLam2, h, miles = stellar_templates(velscale)
+    # em_OIII = emission_line_template([5006.84, 4958.91], velscale,
+    #                                   intens=[1,0.33], return_log=0)
+    # em_hbeta = emission_line_template(4861.333, velscale, return_log=0)
+    # em_NI = emission_line_template(5200.257, velscale, return_log=0)
+    # make_fits(em_OIII, "emission_OIII_fwhm3.6.fits")
+    # make_fits(em_hbeta, "emission_hbeta_fwhm3.6.fits")
+    # make_fits(em_NI, "emission_NI_fwhm3.6.fits")
 

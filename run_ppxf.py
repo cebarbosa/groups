@@ -22,8 +22,8 @@ from config import *
 from load_templates import stellar_templates, emission_templates, \
                             wavelength_array
  
-def run_ppxf(spectra, velscale, ncomp=2, has_emission=True, mdegree=-1,
-             degree=20, pkls=None, plot=False, data_sky=None):
+def run_ppxf(spectra, velscale, ncomp=None, has_emission=True, mdegree=-1,
+             degree=20, pkls=None, plot=False, sky=None, lamRange1=None):
     """ Run pPXF in a list of spectra"""
     if isinstance(spectra, str):
         spectra = [spectra]
@@ -39,37 +39,29 @@ def run_ppxf(spectra, velscale, ncomp=2, has_emission=True, mdegree=-1,
     # Join templates in case emission lines are used.
     if has_emission:
         templates = np.column_stack((star_templates, gas_templates))
+        templates_names = np.hstack((miles, gas_files))
     else:
         templates = star_templates
+        templates_names = miles
     ##########################################################################
     if ncomp == 1:
         components = 0
         moments = [4]
-        templates_names = miles
     elif ncomp == 2:
         components = np.hstack((np.zeros(len(star_templates[0])),
                                 np.ones(len(gas_templates[0]))))
         moments = [4,2]
-        templates_names = np.hstack((miles, gas_files))
-
-    else:
-        raise Exception("ncomp has to be 1 or 2.")
     for i, spec in enumerate(spectra):
         print "pPXF run of spectrum {0} ({1} of {2})".format(spec, i+1,
               len(spectra))
         pkl = pkls[i]
         ######################################################################
         # Read one galaxy spectrum and define the wavelength range
-        specfile = os.path.join(data_dir, spec)
+        specfile = os.path.join(wdir, spec)
         hdu = pf.open(specfile)
         spec_lin = hdu[0].data
         h1 = pf.getheader(specfile)
         lamRange1 = h1['CRVAL1'] + np.array([0.,h1['CDELT1']*(h1['NAXIS1']-1)])
-        ######################################################################
-        # Degrade observed spectra to match template resolution
-        FWHM_dif = np.sqrt(FWHM_tem**2 - FWHM_spec**2)
-        sigma = FWHM_dif/2.355/delta # Sigma difference in pixels
-        spec_lin = ndimage.gaussian_filter1d(spec_lin,sigma)
         ######################################################################
         # Rebin to log scale
         galaxy, logLam1, velscale = util.log_rebin(lamRange1, spec_lin, 
@@ -83,21 +75,12 @@ def run_ppxf(spectra, velscale, ncomp=2, has_emission=True, mdegree=-1,
         dv = (logLam2[0]-logLam1[0])*c
         ######################################################################
         # Set first guess from setup files
-        start, goodPixels = read_setup_file(spec, logLam1, mask_emline=False)
+        start = [v0s[spec.split("_")[1]], 100]
+        goodPixels = None
         ######################################################################
         # Expand start variable to include multiple components
         if ncomp > 1:
             start = [start, [start[0], 30]]
-        ######################################################################
-        # Read sky in needed
-        if data_sky == None:
-            sky = None
-        else:
-            sky_lin = pf.getdata(data_sky[i])
-            sky_lin = ndimage.gaussian_filter1d(sky_lin,sigma)
-            sky, logLam1, velscale = util.log_rebin(lamRange1, sky_lin,
-                                                    velscale=velscale)
-            sky = sky.reshape(-1,1)
         ######################################################################
         # First pPXF interaction
         if os.path.exists(spec.replace(".fits", ".pkl")):
@@ -128,7 +111,7 @@ def run_ppxf(spectra, velscale, ncomp=2, has_emission=True, mdegree=-1,
 def read_setup_file(gal, logw, mask_emline=True):
     """ Read setup file to set first guess and regions to be avoided. """
     w = np.exp(logw)
-    filename = os.path.join(home, "single1", gal + ".setup")
+    filename = gal + ".setup"
     with open(filename) as f:
         f.readline()
         start = f.readline().split()
@@ -264,14 +247,6 @@ class pPXF():
         galaxy, self.logLam1, velscale = util.log_rebin(self.lam, spec_lin,
                                                    velscale=velscale)
         self.dv = (self.logLam2[0]-self.logLam1[0])*c
-        # if self.sky != None:
-        #     sky = self.weights[-1] * self.sky.T[0]
-        #     self.bestfit -= sky
-        #     self.galaxy -= sky
-        #     skyspec = os.path.join(sky_data_dir, spec.replace("fin1", "sky1"))
-        #     sky_lin = pf.getdata(skyspec)
-
-
         return
 
     def calc_sn(self, w1=5200., w2=5500.):
@@ -339,20 +314,55 @@ class pPXF():
         else:
             print "Warning: No sky templates for this run."
 
+def prepare_sky(filenames):
+    """ Prepare matrix with linear sky files. """
+    f = pf.getdata(filenames[0])
+    a = np.zeros((f.shape[0], len(filenames)))
+    for i in range(len(filenames)):
+        try:
+            a[:,i] = pf.getdata(filenames[i])
+        except:
+            print filenames[i]
+
+    return a
+
 if __name__ == '__main__':
     ##########################################################################
-    # Change to data directory according to setup.py program
-    wdir = home
-    os.chdir(wdir)
-    print wdir
-    raw_input()
-    skies = [x.replace("fin", "sky") for x in spectra]
-    sky_dir = os.path.join(home, "sky/1D")
-    skies = [os.path.join(sky_dir, x) for x in skies]
-    ##########################################################################
-    # Go to the main routine of fitting
-    run_ppxf(spectra, velscale, ncomp=1,has_emission=0, mdegree=-1,
-             degree=12, plot=True, data_sky=skies)
+    # Configuring paths
+    nights = os.listdir(data_dir)
+    nights.sort()
+    for night in nights:
+        print "Working in run ", night
+        wdir = os.path.join(data_dir, night)
+        os.chdir(wdir)
+        objs = [x for x in os.listdir(".") if x.startswith("crobj") and
+                x.endswith(".fits")]
+        skies =  [x for x in os.listdir(".") if x.startswith("crobj") and
+                 "sky" in x]
+        objs = [x for x in objs if x not in skies]
+        objs.sort()
+        skies.sort()
+        multispecs = list(set([x.split("_")[0] for x in objs]))
+        multispecs.sort()
+        spec1 = pf.getdata(objs[0])
+        h1 = pf.getheader(objs[0])
+        lamRange1 = h1['CRVAL1'] + np.array([0.,h1['CDELT1']*(h1['NAXIS1']-1)])
+        galaxy1, logLam1, velscale = util.log_rebin(lamRange1, spec1,
+                                                   velscale=velscale)
+        for ms in multispecs:
+            specs = [x for x in objs if x.startswith(ms)]
+            specs.sort()
+            sky = [x for x in skies if x.startswith(ms)]
+            sky.sort()
+            skydata = prepare_sky(sky)
+            skylog = np.zeros((galaxy1.shape[0], len(sky)))
+            for i in range(len(sky)):
+                skylog[:,i], logLam1, velscale = util.log_rebin(lamRange1,
+                                            skydata[:,i], velscale=velscale)
+            # #################################################################
+            # # Go to the main routine of fitting
+            run_ppxf(specs, velscale, ncomp=1, has_emission=1, mdegree=-1,
+                     degree=12, plot=True, sky=skylog)
     # plt.pause(0.001)
     # plt.show(block=1)
     # for spec in spectra:
@@ -368,5 +378,5 @@ if __name__ == '__main__':
     #spectra = [x for x in os.listdir(".") if x.endswith(".fits")]
     # spectra = speclist()
     # make_table(spectra, "ppxf_results_mc200.dat", mc=True, nsim=200)
-    make_table(spectra, "ppxf_results.dat", mc=False)
+    # make_table(spectra, "ppxf_results.dat", mc=False)
     ##########################################################################

@@ -51,10 +51,11 @@ if __name__ == "__main__":
             objfibers = mspec.hydra_fibselect(ftype= spectype)
             print objfibers
             for i,f in enumerate(objfibers):
-                print f
+                print f,
                 finfo = pf.getval(mspec.image, 'SLFIB%s' % f)
                 name = finfo.split()[4].lower()
                 outspec_name = '%s_%s' % (mspec.image.replace('.fits', ''), name)
+                print outspec_name
                 outspec = os.path.join(outdir, outspec_name)
                 iraf.scopy(input=spectrum, output=outspec, w1="INDEF", w2="INDEF",
                            apertures=objfibers[i], clobber = 'yes')
