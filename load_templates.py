@@ -192,9 +192,27 @@ def wavelength_array(spec):
     npix = pf.getval(spec, "NAXIS1")
     return w0 + deltaw * (np.arange(npix) + 1 - pix0)
 
+def make_templates():
+    """ Produces master files for the templates. """
+    # Stellar templates
+    templates, logLam2, h, miles = stellar_templates(velscale)
+    hdu = pf.PrimaryHDU(templates)
+    hdu2 = pf.ImageHDU(logLam2)
+    hdulist = pf.HDUList([hdu, hdu2])
+    hdulist.writeto('miles_FWHM_3.6.fits', clobber=True)
+    with open('miles_FWHM_3.6.txt', "w") as f:
+        f.write("\n".join(miles))
+    # Gas templates
+    gas_templates,logLam_gas, delta_gas, gas_files=emission_templates(velscale)
+    hdu = pf.PrimaryHDU(gas_templates)
+    hdu2 = pf.ImageHDU(logLam_gas)
+    hdulist = pf.HDUList([hdu, hdu2])
+    hdulist.writeto('emission_FWHM_3.6.fits', clobber=True)
+    with open('emission_FWHM_3.6.txt', "w") as f:
+        f.write("\n".join(gas_files))
+
 if __name__ == "__main__":
     os.chdir(templates_dir)
-    templates, logLam2, h, miles = stellar_templates(velscale)
     # em_OIII = emission_line_template([5006.84, 4958.91], velscale,
     #                                   intens=[1,0.33], return_log=0)
     # em_hbeta = emission_line_template(4861.333, velscale, return_log=0)
@@ -202,4 +220,5 @@ if __name__ == "__main__":
     # make_fits(em_OIII, "emission_OIII_fwhm3.6.fits")
     # make_fits(em_hbeta, "emission_hbeta_fwhm3.6.fits")
     # make_fits(em_NI, "emission_NI_fwhm3.6.fits")
+    make_templates()
 
