@@ -9,24 +9,20 @@ Run pPXF in data
 """
 import os
 import pickle
-import fileinput
 
 import numpy as np
 import pyfits as pf
-from scipy import ndimage
 from scipy.signal import medfilt
-from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
+from matplotlib import gridspec
 
 from ppxf import ppxf
 import ppxf_util as util
 from config import *
-from load_templates import stellar_templates, emission_templates, \
-                            wavelength_array
  
 def run_ppxf(spectra, velscale, ncomp=None, has_emission=True, mdegree=-1,
-             degree=20, pkls=None, plot=False, sky=None, lamRange1=None):
+             degree=20, pkls=None, plot=False, sky=None, start=None):
     """ Run pPXF in a list of spectra"""
     if isinstance(spectra, str):
         spectra = [spectra]
@@ -36,8 +32,20 @@ def run_ppxf(spectra, velscale, ncomp=None, has_emission=True, mdegree=-1,
         pkls = [x.replace(".fits", ".pkl") for x in spectra]
     ##########################################################################
     # Load templates for both stars and gas
-    star_templates, logLam2, delta, miles= stellar_templates(velscale)
-    gas_templates,logLam_gas, delta_gas, gas_files=emission_templates(velscale)
+    star_templates = pf.getdata(os.path.join(templates_dir,
+                                             'miles_FWHM_3.6.fits'), 0)
+    logLam2 = pf.getdata(os.path.join(templates_dir, 'miles_FWHM_3.6.fits'), 1)
+    miles = np.loadtxt(os.path.join(templates_dir, 'miles_FWHM_3.6.txt'),
+                       dtype=str).tolist()
+    gas_templates = pf.getdata(os.path.join(templates_dir,
+                                             'emission_FWHM_3.6.fits'), 0)
+    logLam_gas = pf.getdata(os.path.join(templates_dir, 'emission_FWHM_3.6.fits'),
+                            1)
+    gas_files = np.loadtxt(os.path.join(templates_dir, 'emission_FWHM_3.6.txt'),
+                       dtype=str).tolist()
+
+    ngas = len(gas_files)
+    ntemplates = len(miles)
     ##########################################################################
     # Join templates in case emission lines are used.
     if has_emission:
@@ -46,7 +54,12 @@ def run_ppxf(spectra, velscale, ncomp=None, has_emission=True, mdegree=-1,
     else:
         templates = star_templates
         templates_names = miles
+        ngas = 0
     ##########################################################################
+    if sky == None:
+        nsky = 0
+    else:
+        nsky = sky.shape[1]
     if ncomp == 1:
         components = 0
         moments = [4]
@@ -60,11 +73,10 @@ def run_ppxf(spectra, velscale, ncomp=None, has_emission=True, mdegree=-1,
         pkl = pkls[i]
         plt.clf()
         ######################################################################
-        # Read one galaxy spectrum and define the wavelength range
-        specfile = os.path.join(wdir, spec)
-        hdu = pf.open(specfile)
+        # Read galaxy spectrum and define the wavelength range
+        hdu = pf.open(spec)
         spec_lin = hdu[0].data
-        h1 = pf.getheader(specfile)
+        h1 = pf.getheader(spec)
         lamRange1 = h1['CRVAL1'] + np.array([0.,h1['CDELT1']*(h1['NAXIS1']-1)])
         ######################################################################
         # Rebin to log scale
@@ -79,7 +91,8 @@ def run_ppxf(spectra, velscale, ncomp=None, has_emission=True, mdegree=-1,
         dv = (logLam2[0]-logLam1[0])*c
         ######################################################################
         # Set first guess from setup files
-        start = [v0s[spec.split("_")[0]], 100]
+        if start == None:
+            start = [v0s[spec.split("_")[0]], 100]
         goodPixels = None
         ######################################################################
         # Expand start variable to include multiple components
@@ -87,27 +100,38 @@ def run_ppxf(spectra, velscale, ncomp=None, has_emission=True, mdegree=-1,
             start = [start, [start[0], 30]]
         ######################################################################
         # First pPXF interaction
-        if os.path.exists(spec.replace(".fits", ".pkl")):
-            pp0 = pPXF(spec, velscale, pklfile=spec.replace(".fits", ".pkl"))
-            noise0 = pp0.noise
-        else:
-            pp0 = ppxf(templates, galaxy, noise, velscale, start,
-                       goodpixels=goodPixels, plot=False, moments=moments,
-                       degree=12, mdegree=-1, vsyst=dv, component=components,
-                       sky=sky)
-            rms0 = galaxy[goodPixels] - pp0.bestfit[goodPixels]
-            noise0 = 1.4826 * np.median(np.abs(rms0 - np.median(rms0)))
-            noise0 = np.zeros_like(galaxy) + noise0
+        pp0 = ppxf(templates, galaxy, noise, velscale, start,
+                   goodpixels=goodPixels, plot=False, moments=moments,
+                   degree=12, mdegree=-1, vsyst=dv, component=components,
+                   sky=sky)
+        rms0 = galaxy[goodPixels] - pp0.bestfit[goodPixels]
+        noise0 = 1.4826 * np.median(np.abs(rms0 - np.median(rms0)))
+        noise0 = np.zeros_like(galaxy) + noise0
         # Second pPXF interaction, realistic noise estimation
         pp = ppxf(templates, galaxy, noise0, velscale, start,
-                  goodpixels=goodPixels, plot=plot, moments=moments,
+                  goodpixels=goodPixels, plot=False, moments=moments,
                   degree=degree, mdegree=mdegree, vsyst=dv,
                   component=components, sky=sky)
         plt.title(spec.replace("_", "-"))
         plt.show(block=False)
         plt.savefig("logs/{0}".format(spec.replace(".fits", ".png")))
+        ######################################################################
+        # Adding other things to the pp object
         pp.template_files = templates_names
         pp.has_emission = has_emission
+        pp.dv = dv
+        pp.w = np.exp(logLam1)
+        pp.velscale = velscale
+        pp.spec = spec
+        pp.ngas = ngas
+        pp.ntemplates = ntemplates
+        pp.nsky = nsky
+        pp.templates = 0
+        ######################################################################
+        # Save fit to pickles file to keep session
+        # print "Saving to file {0}".format(pkl)
+        # with open(pkl, "w") as f:
+        #     pickle.dump(pp, f)
         ######################################################################
         ppf = pPXF(spec, velscale, pp)
         logdir = os.path.join(os.getcwd(), "logs")
@@ -115,14 +139,13 @@ def run_ppxf(spectra, velscale, ncomp=None, has_emission=True, mdegree=-1,
             os.mkdir(logdir)
         ppf.plot("logs/{0}".format(spec.replace(".fits", ".png")))
         ######################################################################
-        # # Save to output file to keep session
+        # # Save to output text file
         sol = [val for pair in zip(pp.sol, pp.error) for val in pair]
         sol = ["{0:12s}".format("{0:.3g}".format(x)) for x in sol]
         sol.append("{0:12s}".format("{0:.3g}".format(pp0.chi2)))
         sol = ["{0:30s}".format(spec)] + sol
         with open(pkl.replace(".pkl", ".txt"), "w") as f:
             f.write("".join(sol))
-        ######################################################################
     return
 
 def read_setup_file(gal, logw, mask_emline=True):
@@ -233,37 +256,41 @@ class pPXF():
     """ Class to read pPXF pkl files """
     def __init__(self, spec, velscale, pp):
         self.__dict__ = pp.__dict__.copy()
-        self.spec = spec
-        self.velscale = velscale
-        self.w = wavelength_array(spec)
-        self.flux = pf.getdata(self.spec)
-        self.flux_log, self.logw, velscale = util.log_rebin(
-                        [self.w[0], self.w[-1]], self.flux, velscale=velscale)
-        self.w_log = np.exp(self.logw)
-        self.header = pf.getheader(self.spec)
-        self.lam = self.header['CRVAL1'] + np.array([0.,
-                              self.header['CDELT1']*(self.header['NAXIS1']-1)])
-        ######################################################################
-        # # Read templates
-        star_templates, self.logLam2, self.delta, miles= stellar_templates(velscale)
-        ######################################################################
-        # Convolve our spectra to match MILES resolution
-        FWHM_dif = np.sqrt(FWHM_tem**2 - FWHM_spec**2)
-        sigma = FWHM_dif/2.355/self.delta # Sigma difference in pixels
-        ######################################################################
-        spec_lin = ndimage.gaussian_filter1d(self.flux,sigma)
-        # Rebin to logarithm scale
-        galaxy, self.logLam1, velscale = util.log_rebin(self.lam, spec_lin,
-                                                   velscale=velscale)
-        self.dv = (self.logLam2[0]-self.logLam1[0])*c
+        self.calc_arrays()
+        self.calc_sn()
         return
 
-    def calc_sn(self, w1=5200., w2=5500.):
+    def calc_arrays(self):
+        """ Calculate the different useful arrays."""
+        # Slice matrix into components
+        self.m_poly = self.matrix[:,:self.degree + 1]
+        self.matrix = self.matrix[:,self.degree + 1:]
+        self.m_ssps = self.matrix[:,:self.ntemplates]
+        self.matrix = self.matrix[:,self.ntemplates:]
+        self.m_gas = self.matrix[:,:self.ngas]
+        self.matrix = self.matrix[:,self.ngas:]
+        self.m_sky = self.matrix
+        # Slice weights
+        self.w_poly = self.polyweights
+        self.w_ssps = self.weights[:self.ntemplates]
+        self.weights = self.weights[self.ntemplates:]
+        self.w_gas = self.weights[:self.ngas]
+        self.weights = self.weights[self.ngas:]
+        self.w_sky = self.weights
+        # Calculating components
+        self.poly = self.m_poly.dot(self.w_poly)
+        self.ssps = self.m_ssps.dot(self.w_ssps)
+        self.gas = self.m_gas.dot(self.w_gas)
+        self.bestsky = self.m_sky.dot(self.w_sky)
+        return
+
+    def calc_sn(self, w1=4200., w2=6300.):
         idx = np.logical_and(self.w >=w1, self.w <=w2)
-        self.res = self.galaxy[idx] - self.bestfit[idx]
+        self.res = self.galaxy - self.bestfit
         # Using robust method to calculate noise using median deviation
-        self.noise = 1.4826 * np.median(np.abs(self.res - np.median(self.res)))
-        self.signal = np.sum(self.galaxy[idx]) / len(self.galaxy[idx])
+        self.noise = 1.4826 * np.median(np.abs(self.res[idx] -
+                                               np.median(self.res[idx])))
+        self.signal = np.sum(self.ssps[idx]) / len(self.ssps[idx])
         self.sn = self.signal / self.noise
         return
 
@@ -288,48 +315,13 @@ class pPXF():
         self.error = np.maximum(error, self.error)
         return
 
-    def calc_arrays_emission(self):
-        """ Calculate arrays correcting for emission lines. """
-        if self.has_emission:
-            if self.sky == None:
-                em_weights = self.weights[-3:]
-                em_matrix = self.matrix[:,-3:]
-            else:
-                em_weights = self.weights[-4:-1]
-                em_matrix = self.matrix[:,-4:-1]
-            self.em = em_matrix.dot(em_weights)
-            f = interp1d(self.w_log, self.em, kind="linear", bounds_error=False,
-                         fill_value=0. )
-            self.em_linear = f(self.w)
-        else:
-            self.em_linear = np.zeros_like(self.flux)
-            self.em = np.zeros_like(self.bestfit)
-        return
-
-    def sky_sub(self):
-        """ Make sky subtraction in case it was not done before. """
-        if self.sky != None:
-            ntemplates = self.star.shape[1]
-            self.bestsky = self.sky.dot(self.weights[ntemplates:])
-            self.galaxy-= self.bestsky
-            self.bestfit -= self.bestsky
-            # self.bestfit_unbroad -= self.bestsky
-            f = interp1d(self.w_log, self.sky.T[0] * self.weights[-1],
-                         kind="linear",
-                         bounds_error=False, fill_value=0. )
-            self.sky_lin = f(self.w)
-            self.flux -= self.sky_lin
-        else:
-            print "Warning: No sky templates for this run."
-
     def plot(self, output, xlims = [4000, 6500], fignumber=1, textsize = 16):
         """ Plot pPXF run in a output file"""
         plt.figure(fignumber)
         plt.clf()
-        ax = plt.subplot(111)
+        gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1])
+        ax = plt.subplot(gs[0])
         ax.minorticks_on()
-        self.calc_sn()
-        self.calc_arrays_emission()
         if self.ncomp > 1:
             sol = self.sol[0]
             error = self.error[0]
@@ -338,40 +330,29 @@ class pPXF():
         else:
             sol = self.sol
             error = self.error
-        self.sky_sub()
-        ax.plot(self.w_log, self.galaxy, "-k")
-        ax.plot(self.w_log[self.goodpixels], self.bestfit[self.goodpixels],
-                "-r", lw=1.5)
+        ax.plot(self.w, self.galaxy, "-k", lw=2., label=self.spec.replace("_", \
+                                                    "-").replace(".fits", ""))
+        ax.plot(self.w[self.goodpixels], self.ssps[self.goodpixels] + self.poly,
+                "-", lw=1, c="r", label="SSPs")
         if self.has_emission:
-            ax.plot(self.w_log[self.goodpixels],
-                     self.bestfit[self.goodpixels] - self.em[self.goodpixels],
-                    "--y")
-            ax.plot(self.w_log[self.goodpixels], self.em[self.goodpixels], "-b",
-                    lw=1.5)
-            # plt.plot(self.w, self.flux - self.em_linear, "--y")
-        diff = self.galaxy[self.goodpixels] - self.bestfit[self.goodpixels]
-        plt.plot(self.w_log[self.goodpixels], diff, ".g", ms=0.5)
-        badpixels = np.setdiff1d(np.arange(len((self.w_log))), self.goodpixels)
-        badpixels.sort()
-        ax.set_xlim(xlims[0], xlims[1])
-        plt.plot(self.w_log[badpixels], 
-                 self.flux_log[badpixels] - self.bestfit[badpixels], 
-                 ".k", ms=0.5)
-        ax.set_ylim(-3 * self.noise, 4 * np.median(self.galaxy))
+            ax.plot(self.w[self.goodpixels], self.gas[self.goodpixels], "-b",
+                    lw=1., label="Emission Lines")
+        if self.sky != None:
+            ax.plot(self.w[self.goodpixels], self.bestsky[self.goodpixels], \
+                    "-", lw=1, c="g", label="Sky")
         plt.axhline(y=0, ls="--", c="k")
-        plt.xlabel(r"$\lambda$ ($\AA$)", size=18)
         plt.ylabel(r"Flux (Counts)", size=18)
         plt.tight_layout()
         plt.annotate(r"$\chi^2=${0:.2f}".format(self.chi2),
                      xycoords='axes fraction',
-                    xy=(0.05,0.88), size=textsize)
+                    xy=(0.05,0.9), size=textsize)
         plt.annotate(r"S/N={0}".format(np.around(self.sn,1)),
-                     xycoords='axes fraction', xy=(0.25,0.95), size=textsize)
+                     xycoords='axes fraction', xy=(0.25,0.9), size=textsize)
         plt.annotate(r"V={0} km/s".format(np.around(sol[0])),
-                     xycoords='axes fraction', xy=(0.45,0.95), size=textsize,
+                     xycoords='axes fraction', xy=(0.45,0.9), size=textsize,
                      color="r")
         plt.annotate(r"$\sigma$={0} km/s".format(np.around(sol[1])),
-                     xycoords='axes fraction', xy=(0.75,0.95), size=textsize,
+                     xycoords='axes fraction', xy=(0.75,0.9), size=textsize,
                      color="r")
         if self.ncomp > 1:
             plt.annotate(r"V={0} km/s".format(np.around(sol2[0])),
@@ -380,13 +361,28 @@ class pPXF():
             plt.annotate(r"$\sigma$={0} km/s".format(np.around(sol2[1])),
                          xycoords='axes fraction', xy=(0.75,0.88),
                          size=textsize, color="b")
+        leg = plt.legend(loc=6, prop={"size":10})
+        leg.get_frame().set_linewidth(0.0)
+        ax1 = plt.subplot(gs[1])
+        ax1.minorticks_on()
+        ax.set_xlim(self.w[0], self.w[-1])
+        ax1.set_xlim(self.w[0], self.w[-1])
+        ax1.plot(self.w[self.goodpixels], self.galaxy[self.goodpixels] - \
+                 self.bestfit[self.goodpixels], "-k")
+        ax1.axhline(y=0, ls="--", c="k")
+        ax1.axhline(y=self.noise, ls="--", c="r")
+        ax1.axhline(y=-self.noise, ls="--", c="r")
+        ax1.set_xlabel(r"$\lambda$ ($\AA$)", size=18)
+        ax.xaxis.set_ticklabels([])
+        ax1.set_ylabel(r"$\Delta$Flux", size=18)
+        gs.update(hspace=0.075, left=0.125, bottom=0.1, top=0.98, right=0.97)
         plt.savefig(output)
 
 
 
 
-def read_sky(filenames):
-    """ Prepare matrix with linear sky files. """
+def fits_to_matrix(filenames):
+    """ Load several fits of the same dimension into a matrix.  """
     f = pf.getdata(filenames[0])
     a = np.zeros((f.shape[0], len(filenames)))
     for i in range(len(filenames)):
@@ -396,36 +392,19 @@ def read_sky(filenames):
             print filenames[i]
     return a
 
-def run_over_all():
-    """ Run pPXF in a generic way over all data. """
-    nights = sorted(os.listdir(data_dir))
-    for night in nights:
-        print "Working in run ", night
-        wdir = os.path.join(data_dir, night)
-        os.chdir(wdir)
-        log_dir = os.path.join(wdir, "logs")
-        if not os.path.exists(log_dir):
-            os.mkdir(log_dir)
-        fits = [x for x in os.listdir(".") if x.endswith(".fits")]
-        skies =  [x for x in fits if x.startswith("sky")]
-        specs = [x for x in fits if x not in skies]
-        specs.sort()
-        skies.sort()
-        spec1 = pf.getdata(specs[0])
-        h1 = pf.getheader(specs[0])
-        lamRange1 = h1['CRVAL1'] + np.array([0.,h1['CDELT1']*(h1['NAXIS1']-1)])
-        galaxy1, logLam1, velscale = util.log_rebin(lamRange1, spec1,
+def load_sky(filenames, velscale):
+    """ Load and rebin sky files. """
+    skydata = fits_to_matrix(filenames)
+    h1 = pf.getheader(filenames[0])
+    lamRange1 = h1['CRVAL1'] + np.array([0.,h1['CDELT1']*(h1['NAXIS1']-1)])
+    sky1, logLam1, velscale = util.log_rebin(lamRange1, skydata[:,0],
                                                    velscale=velscale)
-        skydata = read_sky(skies)
-        skylog = np.zeros((galaxy1.shape[0], len(skies)))
-        for i in range(len(skies)):
-            skylog[:,i], logLam1, velscale = util.log_rebin(lamRange1,
-                                            skydata[:,i], velscale=velscale)
-        # #################################################################
-        # # Go to the main routine of fitting
-        run_ppxf(specs, velscale, ncomp=1, has_emission=1, mdegree=-1,
-                 degree=12, plot=True, sky=skylog)
-    return
+
+    skylog = np.zeros((sky1.shape[0], len(filenames)))
+    for i in range(len(filenames)):
+        skylog[:,i], logLam1, velscale = util.log_rebin(lamRange1,
+                                        skydata[:,i], velscale=velscale)
+    return skylog
 
 def make_table_from_txt():
     """ Make a summary table using the txt outputs. """
@@ -469,6 +448,41 @@ def select_specs():
         with open(output, "w") as f:
             f.write("\n".join(ignorelist))
 
+def run_over_all():
+    """ Run pPXF in a generic way over all data. """
+    nights = sorted(os.listdir(data_dir))
+    for night in nights:
+        print "Working in run ", night
+        wdir = os.path.join(data_dir, night)
+        os.chdir(wdir)
+        log_dir = os.path.join(wdir, "logs")
+        if not os.path.exists(log_dir):
+            os.mkdir(log_dir)
+        fits = [x for x in os.listdir(".") if x.endswith(".fits")]
+        skies =  [x for x in fits if x.startswith("sky")]
+        specs = [x for x in fits if x not in skies]
+        specs.sort()
+        skies.sort()
+        sky = load_sky(skies, velscale)
+        # #################################################################
+        # # Go to the main routine of fitting
+        run_ppxf(specs, velscale, ncomp=1, has_emission=1, mdegree=-1,
+                 degree=12, plot=True, sky=sky)
+    return
+
+def run_list(night, specs):
+    """ Run pPXF on a given list of spectra of the same night. """
+    wdir = os.path.join(data_dir, night)
+    os.chdir(wdir)
+    fits = [x for x in os.listdir(".") if x.endswith(".fits")]
+    skies =  sorted([x for x in fits if x.startswith("sky")])
+    sky = load_sky(skies, velscale)
+    run_ppxf(specs, velscale, ncomp=1, has_emission=1, mdegree=-1,
+                 degree=12, plot=True, sky=sky)
+
 if __name__ == '__main__':
-    select_specs()
+    # run_list("blanco10n1", ["hcg62_4.fits"])
+    run_over_all()
+
+
 
