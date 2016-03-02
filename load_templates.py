@@ -119,7 +119,7 @@ def stellar_templates(velscale):
 def emission_templates(velscale):
     """ Load files with stellar library used as templates. """
     current_dir = os.getcwd()
-    # Template directory is also set in setyp.py
+    # Template directory is also set in setup.py
     os.chdir(templates_dir)
     emission = [x for x in os.listdir(".") if x.startswith("emission") and
              x.endswith(".fits")]
@@ -175,6 +175,7 @@ def make_fits(spec, outfile):
     hdu = pf.PrimaryHDU(spec)
     miles = [x for x in os.listdir(".") if x.startswith("Mun") and
              x.endswith(".fits")][0]
+    print miles
     w0 = pf.getval(miles, "CRVAL1")
     deltaw = pf.getval(miles, "CDELT1")
     pix0 = pf.getval(miles, "CRPIX1")
@@ -213,6 +214,8 @@ def make_templates():
 
 if __name__ == "__main__":
     os.chdir(templates_dir)
+    # em_hdelta = emission_line_template(4103., velscale, return_log=0)
+    # make_fits(em_hdelta, "emission_hdelta_fwhm3.6.fits")
     # em_OIII = emission_line_template([5006.84, 4958.91], velscale,
     #                                   intens=[1,0.33], return_log=0)
     # em_hbeta = emission_line_template(4861.333, velscale, return_log=0)

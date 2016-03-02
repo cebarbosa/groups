@@ -1052,7 +1052,7 @@ class ppxf(object):
         tmp = np.empty((self.star.shape[0], nspec))
         for j, star_rfft in enumerate(self.star_rfft.T): # loop over columns
             for k in range(nspec):
-                tt = np.fft.irfft(star_rfft*losvd_rfft[:, self.component[j], k])
+                tt = np.fft.irfft(star_rfft*losvd_rfft[:, int(self.component[j]), k])
                 if self.factor == 1:  # No oversampling
                     tmp[:, k] = tt[:self.star.shape[0]]
                 else:                 # Template was oversampled before convolution
