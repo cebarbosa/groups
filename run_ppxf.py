@@ -16,10 +16,44 @@ from scipy.signal import medfilt
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 from matplotlib import gridspec
+from scipy.ndimage.filters import convolve1d
 
 from ppxf import ppxf
 import ppxf_util as util
 from config import *
+
+def wavelength_array(spec, axis=1, extension=0):
+    """ Produces array for wavelenght of a given array. """
+    w0 = pf.getval(spec, "CRVAL{0}".format(axis), extension)
+    deltaw = pf.getval(spec, "CD{0}_{0}".format(axis), extension)
+    pix0 = pf.getval(spec, "CRPIX{0}".format(axis), extension)
+    npix = pf.getval(spec, "NAXIS{0}".format(axis), extension)
+    return w0 + deltaw * (np.arange(npix) + 1 - pix0)
+
+def losvd_convolve(spec, losvd, velscale):
+    """ Apply LOSVD to a given spectra given that both wavelength and spec
+     arrays are log-binned. """
+    # Convert to pixel scale
+    pars = np.copy(losvd)
+    pars[:2] /= velscale
+    dx = int(np.ceil(np.max(abs(pars[0]) + 5*pars[1])))
+    nl = 2*dx + 1
+    x = np.linspace(-dx, dx, nl)   # Evaluate the Gaussian using steps of 1/factor pixel
+    vel = pars[0]
+    w = (x - vel)/pars[1]
+    w2 = w**2
+    gauss = np.exp(-0.5*w2)
+    profile = gauss/gauss.sum()
+    # Hermite polynomials normalized as in Appendix A of van der Marel & Franx (1993).
+    # Coefficients for h5, h6 are given e.g. in Appendix C of Cappellari et al. (2002)
+    if losvd.size > 2:        # h_3 h_4
+        poly = 1 + pars[2]/np.sqrt(3)*(w*(2*w2-3)) \
+                 + pars[3]/np.sqrt(24)*(w2*(4*w2-12)+3)
+        if len(losvd) == 6:  # h_5 h_6
+            poly += pars[4]/np.sqrt(60)*(w*(w2*(4*w2-20)+15)) \
+                  + pars[5]/np.sqrt(720)*(w2*(w2*(8*w2-60)+90)-15)
+        profile *= poly
+    return convolve1d(spec, profile)
  
 def run_ppxf(spectra, velscale, ncomp=None, has_emission=True, mdegree=-1,
              degree=20, plot=False, sky=None, start=None, moments=None):
@@ -266,14 +300,22 @@ class pPXF():
         self.matrix = self.matrix[:,self.ngas:]
         self.m_sky = self.matrix
         # Slice weights
-        self.w_poly = self.polyweights
+        if hasattr(self, "polyweights"):
+            self.w_poly = self.polyweights
+            self.poly = self.m_poly.dot(self.w_poly)
+        else:
+            self.poly = np.zeros_like(self.galaxy)
+        if hasattr(self, "mpolyweights"):
+            x = np.linspace(-1, 1, len(self.galaxy))
+            self.mpoly = np.polynomial.legendre.legval(x, np.append(1, self.mpolyweights))
+        else:
+            self.mpoly = np.ones_like(self.galaxy)
         self.w_ssps = self.weights[:self.ntemplates]
         self.weights = self.weights[self.ntemplates:]
         self.w_gas = self.weights[:self.ngas]
         self.weights = self.weights[self.ngas:]
         self.w_sky = self.weights
         # Calculating components
-        self.poly = self.m_poly.dot(self.w_poly)
         self.ssps = self.m_ssps.dot(self.w_ssps)
         self.gas = self.m_gas.dot(self.w_gas)
         self.bestsky = self.m_sky.dot(self.w_sky)
@@ -285,7 +327,8 @@ class pPXF():
         # Using robust method to calculate noise using median deviation
         self.noise = 1.4826 * np.median(np.abs(self.res[idx] -
                                                np.median(self.res[idx])))
-        self.signal = np.sum(self.ssps[idx] + self.poly[idx]) / len(self.ssps[idx])
+        self.signal = np.sum(self.mpoly[idx] * (self.ssps[idx] + \
+                      self.poly[idx])) / len(self.ssps[idx])
         self.sn = self.signal / self.noise
         return
 
@@ -538,9 +581,9 @@ def run_over_all():
 
 def ppsave(pp, outroot="logs/out"):
     """ Produces output files for a ppxf object. """
-    arrays = ["matrix", "w", "bestfit", "goodpixels", "galaxy", "sky"]
-    delattr(pp, "star_rfft")
-    delattr(pp, "star")
+    arrays = ["matrix", "w", "bestfit", "goodpixels", "galaxy", "noise"]
+    # delattr(pp, "star_rfft")
+    # delattr(pp, "star")
     hdus = []
     for i,att in enumerate(arrays):
         if i == 0:
@@ -557,7 +600,7 @@ def ppload(inroot="logs/out"):
     """ Read ppxf arrays. """
     with open(inroot + ".pkl") as f:
         pp = pickle.load(f)
-    arrays = ["matrix", "w", "bestfit", "goodpixels", "galaxy", "sky"]
+    arrays = ["matrix", "w", "bestfit", "goodpixels", "galaxy", "noise"]
     for i, item in enumerate(arrays):
         setattr(pp, item, pf.getdata(inroot + ".fits", i))
     return pp
@@ -599,9 +642,79 @@ def make_sky_fig(skies, loglam, filenames):
     ax.set_ylim(0,20)
     plt.legend(loc=0, prop={"size":6})
     plt.savefig("logs/sky.png")
+    return
+
+def run_stellar_templates(velscale):
+    """ Run over stellar templates. """
+    temp_dir = os.path.join(home, "stellar_templates")
+    standards_dir = os.path.join(home, "data/standards")
+    standards = sorted([x for x in os.listdir(standards_dir) if
+                        x.endswith(".fits")])
+    table = os.path.join(tables_dir, "lick_standards.txt")
+    ids = np.loadtxt(table, usecols=(0,), dtype=str).tolist()
+    star_pars = np.loadtxt(table, usecols=(26,27,28,))
+    for standard in standards:
+        name = standard.split(".")[0].upper()
+        if name not in ids:
+            continue
+        print standard
+        idx = ids.index(name)
+        T, logg, FeH = star_pars[idx]
+        tempfile= "MILES_Teff{0:.2f}_Logg{1:.2f}_MH{2:.2f}" \
+                   "_linear_FWHM_3.6.fits".format(T, logg, FeH )
+        os.chdir(temp_dir)
+        template = pf.getdata(tempfile)
+        htemp = pf.getheader(tempfile)
+        wtemp = htemp["CRVAL1"] + htemp["CDELT1"] * \
+                            (np.arange(htemp["NAXIS1"]) + 1 - htemp["CRPIX1"])
+        os.chdir(standards_dir)
+        data = pf.getdata(standard)
+        w = wavelength_array(standard)
+        lamRange1 = np.array([w[0], w[-1]])
+        lamRange2 = np.array([wtemp[0], wtemp[-1]])
+        # Rebin to log scale
+        star, logLam1, velscale = util.log_rebin(lamRange1, data,
+                                                   velscale=velscale)
+        temp, logLam2, velscale = util.log_rebin(lamRange2, template,
+                                                   velscale=velscale)
+        noise = np.ones_like(star)
+        dv = (logLam2[0]-logLam1[0])*c
+        pp0 = ppxf(temp, star, noise, velscale, [300.,20], plot=False,
+                   moments=2, degree=-1, mdegree=20, vsyst=dv)
+        ######################################################################
+        pp0.w = np.exp(logLam1)
+        pp0.wtemp = np.exp(logLam2)
+        pp0.temp = temp
+        pp0.ntemplates = 1
+        pp0.ngas = 0
+        if not os.path.exists("logs"):
+            os.mkdir("logs")
+        ppsave(pp0, "logs/{0}".format(standard.replace(".fits", "")))
+    return
+
+def flux_calibration_test(velscale):
+    standards_dir = os.path.join(home, "data/standards")
+    os.chdir(standards_dir)
+    standards = sorted([x for x in os.listdir(standards_dir) if
+                        x.endswith(".fits")])
+    for standard in standards:
+        if not os.path.exists("logs/{0}".format(standard)):
+            continue
+        pp = ppload("logs/{0}".format(standard.replace(".fits", "")))
+        pp = pPXF(standard, velscale, pp)
+        h = pf.getheader(standard)
+        print h
+        # plt.plot(pp.w, pp.galaxy, "-k")
+        # plt.plot(pp.w, pp.bestfit, "-r")
+        plt.plot(pp.w, pp.mpoly, "-")
+    plt.show()
+    return
+
 
 if __name__ == '__main__':
-    run_list("blanco10n1", ["hcg62_14.fits"])
+    # run_stellar_templates(velscale)
+    flux_calibration_test(velscale)
+    # run_list("blanco10n1", ["hcg62_14.fits"])
     # run_over_all()
     # plot_all()
 
