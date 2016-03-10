@@ -13,21 +13,11 @@ import numpy as np
 import pyfits as pf
 from scipy.interpolate import NearestNDInterpolator as interpolator
 from scipy.interpolate import interp1d
-from scipy.ndimage.filters import convolve1d
 import matplotlib.pyplot as plt
 
 from config import *
 import lector as lector
-from run_ppxf import pPXF, ppload
-
-
-def wavelength_array(spec, axis=3, extension=0):
-    """ Produces array for wavelenght of a given array. """
-    w0 = pf.getval(spec, "CRVAL{0}".format(axis), extension)
-    deltaw = pf.getval(spec, "CD{0}_{0}".format(axis), extension)
-    pix0 = pf.getval(spec, "CRPIX{0}".format(axis), extension)
-    npix = pf.getval(spec, "NAXIS{0}".format(axis), extension)
-    return w0 + deltaw * (np.arange(npix) + 1 - pix0)
+from run_ppxf import pPXF, ppload, wavelength_array, losvd_convolve
 
 def correct_indices(indices, inderr, indtempl, indtempl_b):
     """ Make corrections for the broadening in the spectra."""
@@ -129,32 +119,6 @@ class Vdisp_corr_k04():
             else:
                 newlick[i] = lick[i]
         return newlick
-
-
-def losvd_convolve(spec, losvd):
-    """ Apply LOSVD to a given spectra given that both wavelength and spec
-     arrays are log-binned. """
-    # Convert to pixel scale
-    pars = np.copy(losvd)
-    pars[:2] /= velscale
-    dx = int(np.ceil(np.max(abs(pars[0]) + 5*pars[1])))
-    nl = 2*dx + 1
-    x = np.linspace(-dx, dx, nl)   # Evaluate the Gaussian using steps of 1/factor pixel
-    vel = pars[0]
-    w = (x - vel)/pars[1]
-    w2 = w**2
-    gauss = np.exp(-0.5*w2)
-    profile = gauss/gauss.sum()
-    # Hermite polynomials normalized as in Appendix A of van der Marel & Franx (1993).
-    # Coefficients for h5, h6 are given e.g. in Appendix C of Cappellari et al. (2002)
-    if losvd.size > 2:        # h_3 h_4
-        poly = 1 + pars[2]/np.sqrt(3)*(w*(2*w2-3)) \
-                 + pars[3]/np.sqrt(24)*(w2*(4*w2-12)+3)
-        if len(losvd) == 6:  # h_5 h_6
-            poly += pars[4]/np.sqrt(60)*(w*(w2*(4*w2-20)+15)) \
-                  + pars[5]/np.sqrt(720)*(w2*(w2*(8*w2-60)+90)-15)
-        profile *= poly
-    return convolve1d(spec, profile)
 
 def run(nights, specnames):
     for night, spectrum in zip(nights, specnames):
@@ -262,9 +226,9 @@ def lick_standards_table():
     with open(table) as f:
         header = f.readline()
         data = f.readlines()
-    cols = np.arange(39,240,8)
-    lick = np.zeros((len(data), 25))
-    for i in range(25):
+    cols = np.hstack((np.arange(39,240,8), np.array([249, 257, 265])))
+    lick = np.zeros((len(data), cols.size - 1))
+    for i in range(cols.size - 1):
         d = [x[cols[i]:cols[i+1]].strip() for x in data]
         d = np.array([x if x else np.nan for x in d])
         lick[:, i] = d
@@ -280,8 +244,8 @@ def lick_standards_table():
         else:
             continue
         l = ["{0:.5f}".format(x) for x in lick[idx]]
-        l = ["{0:10s}".format(x) for x in l]
-        table.append("{0:12s}".format(star) + "".join(l))
+        l = ["{0:14s}".format(x) for x in l]
+        table.append("{0:15s}".format(star) + "".join(l))
     with open(os.path.join(tables_dir, "lick_standards.txt"), "w") as f:
         f.write("\n".join(table))
 
