@@ -59,6 +59,3 @@ if __name__ == "__main__":
                 outspec = os.path.join(outdir, outspec_name)
                 iraf.scopy(input=spectrum, output=outspec, w1="INDEF", w2="INDEF",
                            apertures=objfibers[i], clobber = 'yes')
-        
-    
-    
