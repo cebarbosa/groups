@@ -16,6 +16,7 @@ from scipy.signal import medfilt
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 from matplotlib import gridspec
+import matplotlib.cm as cm
 from scipy.ndimage.filters import convolve1d
 
 from ppxf import ppxf
@@ -697,16 +698,17 @@ def flux_calibration_test(velscale):
     os.chdir(standards_dir)
     standards = sorted([x for x in os.listdir(standards_dir) if
                         x.endswith(".fits")])
-    for standard in standards:
+    fibers = np.array([int(x.split(".")[1]) for x in standards])
+    cmap = cm.get_cmap("rainbow")
+    for i,standard in enumerate(standards):
         if not os.path.exists("logs/{0}".format(standard)):
             continue
         pp = ppload("logs/{0}".format(standard.replace(".fits", "")))
         pp = pPXF(standard, velscale, pp)
         h = pf.getheader(standard)
-        print h
         # plt.plot(pp.w, pp.galaxy, "-k")
         # plt.plot(pp.w, pp.bestfit, "-r")
-        plt.plot(pp.w, pp.mpoly, "-")
+        plt.plot(pp.w, pp.mpoly, "-", c=cmap(fibers[i]/140.))
     plt.show()
     return
 
