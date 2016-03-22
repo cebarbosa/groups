@@ -19,6 +19,7 @@ import numpy as np
 import pyfits as pf
 from pyraf import iraf, iraffunctions
 
+from config import *
 from multispec import MultiSpec
 
 iraf.onedspec(_doprint=0)
@@ -35,9 +36,11 @@ if __name__ == "__main__":
     dirs = [x for x in os.listdir(home) if
             os.path.isdir(os.path.join(home, x))]
     spectype = '1'
-    for d in dirs:
-        chdir(os.path.join(home, d))
-        outdir = os.path.join(outhome, d)
+    coords = []
+    for night in nights:
+        wdir = os.path.join(home, night)
+        chdir(wdir)
+        outdir = os.path.join(outhome, night)
         print outdir
         if not os.path.exists(outdir):
             os.mkdir(outdir)
@@ -49,13 +52,26 @@ if __name__ == "__main__":
             print "working spectrum: ", spectrum
             mspec = MultiSpec(im, spectrum)
             objfibers = mspec.hydra_fibselect(ftype= spectype)
-            print objfibers
             for i,f in enumerate(objfibers):
-                print f,
                 finfo = pf.getval(mspec.image, 'SLFIB%s' % f)
                 name = finfo.split()[4].lower()
-                outspec_name = '%s_%s' % (mspec.image.replace('.fits', ''), name)
-                print outspec_name
+                outspec_name = '%s_%s' % (mspec.image.replace('.fits', ''),
+                                          name)
+                log = "{0:25s}{1:15s}{2}".format(outspec_name, night, finfo)
+                coords.append(log)
                 outspec = os.path.join(outdir, outspec_name)
-                iraf.scopy(input=spectrum, output=outspec, w1="INDEF", w2="INDEF",
-                           apertures=objfibers[i], clobber = 'yes')
+                if not os.path.exists(outspec):
+                    iraf.scopy(input=spectrum, output=outspec, w1="INDEF",
+                               w2="INDEF", apertures=objfibers[i],
+                               clobber = 'yes')
+                chdir(outdir)
+                data = pf.getdata(outspec_name + ".fits")
+                h = pf.getheader(outspec_name + ".fits")
+                h["FINFO"] = (finfo, "Coordinates info")
+                pf.writeto(outspec_name + ".fits", data, h, clobber=True)
+                chdir(wdir)
+
+    # coordfile = os.path.join(tables_dir, "coords.dat")
+    # with open(coordfile, "w") as f:
+    #     f.write("\n".join(coords))
+    # print "End"
