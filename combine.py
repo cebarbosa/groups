@@ -10,6 +10,7 @@ Combine spectra night by night
 """
 
 import os
+import shutil
 
 import numpy as np
 import pyfits as pf
@@ -33,18 +34,22 @@ def select_specs(specs):
 if __name__ == "__main__":
     wdir = os.path.join(home, "data/reduced")
     outroot = wdir.replace("reduced", "combined")
+    outroot2 = wdir.replace("reduced", "single")
     if not os.path.exists(outroot):
         os.mkdir(outroot)
     os.chdir(wdir)
-    for indir in os.listdir("."):
-        print "Working in night ", indir
-        outdir = os.path.join(outroot, indir)
-        os.chdir(os.path.join(wdir, indir))
-        iraffunctions.chdir(os.path.join(wdir, indir))
+    for night in nights:
+        print "Working in night ", night
+        outdir = os.path.join(outroot, night)
+        outdir2 = os.path.join(outroot2, night)
+        os.chdir(os.path.join(wdir, night))
+        iraffunctions.chdir(os.path.join(wdir, night))
         outfile = PdfPages("log_scombine.pdf")
         fig = plt.figure(1)
         if not os.path.exists(outdir):
             os.mkdir(outdir)
+        if not os.path.exists(outdir2):
+            os.mkdir(outdir2)
         fits = [x for x in os.listdir(".") if x.endswith("fits")]
         objs = set(["_".join(x.split("_")[1:]) for x in fits])
         for i, obj in enumerate(objs):
@@ -53,8 +58,14 @@ if __name__ == "__main__":
             goodlis = select_specs(lis)
             filenames = ", ".join(goodlis)
             output = os.path.join(outdir, obj)
+            if  len(goodlis) == 1:
+                shutil.copy(goodlis[0], os.path.join(outdir2,
+                    goodlis[0].replace("_hcg_", "_").replace("_h62_", "_")))
+
+
+            continue
             if os.path.exists(output):
-                os.remove(output)
+                continue
             iraf.scombine(input = filenames, output = output, group = 'all',
                           combine = 'sum', reject="none",
                           weight="none", w1 = 4000., w2=6500.,dw=1.25)
