@@ -19,7 +19,8 @@ from scipy.constants import c
 
 c /= 1000. # Convert to km / s
 
-def lector(wl, intens, noise, infile, vel=0, cols=(0,8,2,3,4,5,6,7)):
+def lector(wl, intens, noise, infile, vel=0, cols=(0,8,2,3,4,5,6,7),
+           interp_kind="linear"):
     """ Make the measurement of Lick indices from file infile in spectrum. 
     
     This function make a direct measurement of the Lick (or any other 
@@ -101,8 +102,8 @@ def lector(wl, intens, noise, infile, vel=0, cols=(0,8,2,3,4,5,6,7)):
         int_red = intens[sec_red]
         int_ind = intens[sec_ind]
         # Making interpolation functions
-        s_blue = interp1d(w_blue, int_blue, kind="linear")
-        s_red = interp1d(w_red, int_red, kind="linear")
+        s_blue = interp1d(w_blue, int_blue, kind=interp_kind)
+        s_red = interp1d(w_red, int_red, kind=interp_kind)
         # Make oversampled arrays of wavelenghts
         xblue = np.linspace(w[0], w[1], npoints)
         xred = np.linspace(w[4], w[5], npoints)
@@ -126,12 +127,12 @@ def lector(wl, intens, noise, infile, vel=0, cols=(0,8,2,3,4,5,6,7)):
         # Calculating index according to type: 0 and 2 in angstroms and 1 in 
         # mags, and respective errors
         if itype in [0,2]:
-            si = interp1d(w_ind, 1 - int_ind / fc, kind="linear")
+            si = interp1d(w_ind, 1 - int_ind / fc, kind=interp_kind)
             c1 = (w[3] - w[2]) * c2
             results[i] = romb(si(xind), dx = xind[1] - xind[0])
             errors[i] = (c1 - c2 * results[i]) / SN
         elif itype == 1:
-            si = interp1d(w_ind, int_ind / fc, kind="linear")
+            si = interp1d(w_ind, int_ind / fc, kind=interp_kind)
 
             results[i] = -2.5 * np.log10(romb(si(xind), 
                         dx = xind[1] - xind[0]) / (w[3] - w[2]))

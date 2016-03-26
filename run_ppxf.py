@@ -260,7 +260,6 @@ def make_table(spectra, output, mc=False, nsim=200, clean=True, pkls=None):
         if not os.path.exists(spec.replace(".fits", ".pkl")):
             continue
         pp = pPXF(spec, velscale, pklfile=pkl)
-        pp.calc_sn()
         sn = pp.sn
         if mc:
             pp.mc_errors(nsim=nsim)
@@ -286,6 +285,7 @@ class pPXF():
     """ Class to read pPXF pkl files """
     def __init__(self, spec, velscale, pp):
         self.__dict__ = pp.__dict__.copy()
+        self.dw = 0.7 # Angstrom / pixel
         self.calc_arrays()
         self.calc_sn()
         return
@@ -322,14 +322,13 @@ class pPXF():
         self.bestsky = self.m_sky.dot(self.w_sky)
         return
 
-    def calc_sn(self, w1=4200., w2=6300.):
+    def calc_sn(self, w1=4200., w2=6000.):
         idx = np.logical_and(self.w >=w1, self.w <=w2)
         self.res = self.galaxy - self.bestfit
         # Using robust method to calculate noise using median deviation
-        self.noise = 1.4826 * np.median(np.abs(self.res[idx] -
-                                               np.median(self.res[idx])))
+        self.noise = np.nanstd(self.res[idx])
         self.signal = np.sum(self.mpoly[idx] * (self.ssps[idx] + \
-                      self.poly[idx])) / len(self.ssps[idx])
+                      self.poly[idx])) / len(self.ssps[idx]) / np.sqrt(self.dw)
         self.sn = self.signal / self.noise
         return
 
@@ -608,30 +607,26 @@ def ppload(inroot="logs/out"):
 
 def plot_all():
     """ Make plot of all fits. """
-    nights = sorted(os.listdir(data_dir))
-    for night in nights:
-        print "Working in run ", night
-        wdir = os.path.join(data_dir, night)
-        os.chdir(wdir)
-        fits = [x for x in os.listdir(".") if x.endswith(".fits")]
-        skies =  [x for x in fits if x.startswith("sky")]
-        specs = sorted([x for x in fits if x not in skies])
-        for i,spec in enumerate(specs):
-            print "Working on spec {0} ({1}/{2})".format(spec, i+1, len(specs))
-            pp = ppload("logs/{0}".format(spec.replace(".fits", "")))
-            pp = pPXF(spec, velscale, pp)
-            pp.plot("logs/{0}".format(spec.replace(".fits", ".png")))
+    os.chdir(data_dir)
+    specs = sorted([x for x in os.listdir(".") if x.endswith(".fits")])
+    for i,spec in enumerate(specs):
+        print "Working on spec {0} ({1}/{2})".format(spec, i+1, len(specs))
+        pp = ppload("logs/{0}".format(spec.replace(".fits", "")))
+        pp = pPXF(spec, velscale, pp)
+        pp.plot("logs/{0}".format(spec.replace(".fits", ".png")))
 
-def run_list(night, specs):
+def run_list(night, specs, start=None):
     """ Run pPXF on a given list of spectra of the same night. """
     wdir = os.path.join(data_dir, night)
+    if start is None:
+        start = [2000., 50.]
     os.chdir(wdir)
     fits = [x for x in os.listdir(".") if x.endswith(".fits")]
     skies =  sorted([x for x in fits if x.startswith("sky")])
     sky, loglam = load_sky(skies, velscale, full_output=True)
     # make_sky_fig(sky, loglam, skies)]
     run_ppxf(specs, velscale, ncomp=2, has_emission=1, mdegree=-1,
-                 degree=12, plot=True, sky=sky, start=[2000., 50.],
+                 degree=12, plot=True, sky=sky, start=start,
              moments=[4, 2])
 
 def make_sky_fig(skies, loglam, filenames):
@@ -649,75 +644,146 @@ def run_stellar_templates(velscale):
     """ Run over stellar templates. """
     temp_dir = os.path.join(home, "stellar_templates")
     standards_dir = os.path.join(home, "data/standards")
-    standards = sorted([x for x in os.listdir(standards_dir) if
-                        x.endswith(".fits")])
     table = os.path.join(tables_dir, "lick_standards.txt")
     ids = np.loadtxt(table, usecols=(0,), dtype=str).tolist()
     star_pars = np.loadtxt(table, usecols=(26,27,28,))
-    for standard in standards:
-        name = standard.split(".")[0].upper()
-        if name not in ids:
-            continue
-        print standard
-        idx = ids.index(name)
-        T, logg, FeH = star_pars[idx]
-        tempfile= "MILES_Teff{0:.2f}_Logg{1:.2f}_MH{2:.2f}" \
-                   "_linear_FWHM_3.6.fits".format(T, logg, FeH )
-        os.chdir(temp_dir)
-        template = pf.getdata(tempfile)
-        htemp = pf.getheader(tempfile)
-        wtemp = htemp["CRVAL1"] + htemp["CDELT1"] * \
+    for night in nights:
+        cdir = os.path.join(standards_dir, night)
+        os.chdir(cdir)
+        standards = sorted([x for x in os.listdir(".") if x.endswith(".fits")])
+        for standard in standards:
+            name = standard.split(".")[0].upper()
+            if name not in ids:
+                continue
+            print standard
+            idx = ids.index(name)
+            T, logg, FeH = star_pars[idx]
+            tempfile= "MILES_Teff{0:.2f}_Logg{1:.2f}_MH{2:.2f}" \
+                       "_linear_FWHM_3.6.fits".format(T, logg, FeH )
+            os.chdir(temp_dir)
+            template = pf.getdata(tempfile)
+            htemp = pf.getheader(tempfile)
+            wtemp = htemp["CRVAL1"] + htemp["CDELT1"] * \
                             (np.arange(htemp["NAXIS1"]) + 1 - htemp["CRPIX1"])
-        os.chdir(standards_dir)
-        data = pf.getdata(standard)
-        w = wavelength_array(standard)
-        lamRange1 = np.array([w[0], w[-1]])
-        lamRange2 = np.array([wtemp[0], wtemp[-1]])
-        # Rebin to log scale
-        star, logLam1, velscale = util.log_rebin(lamRange1, data,
-                                                   velscale=velscale)
-        temp, logLam2, velscale = util.log_rebin(lamRange2, template,
-                                                   velscale=velscale)
-        noise = np.ones_like(star)
-        dv = (logLam2[0]-logLam1[0])*c
-        pp0 = ppxf(temp, star, noise, velscale, [300.,20], plot=False,
-                   moments=2, degree=-1, mdegree=20, vsyst=dv)
-        ######################################################################
-        pp0.w = np.exp(logLam1)
-        pp0.wtemp = np.exp(logLam2)
-        pp0.temp = temp
-        pp0.ntemplates = 1
-        pp0.ngas = 0
-        if not os.path.exists("logs"):
-            os.mkdir("logs")
-        ppsave(pp0, "logs/{0}".format(standard.replace(".fits", "")))
+            os.chdir(cdir)
+            data = pf.getdata(standard)
+            w = wavelength_array(standard)
+            lamRange1 = np.array([w[0], w[-1]])
+            lamRange2 = np.array([wtemp[0], wtemp[-1]])
+            # Rebin to log scale
+            star, logLam1, velscale = util.log_rebin(lamRange1, data,
+                                                       velscale=velscale)
+            temp, logLam2, velscale = util.log_rebin(lamRange2, template,
+                                                       velscale=velscale)
+            noise = np.ones_like(star)
+            dv = (logLam2[0]-logLam1[0])*c
+            pp0 = ppxf(temp, star, noise, velscale, [300.,20], plot=False,
+                       moments=2, degree=-1, mdegree=25, vsyst=dv)
+            plt.title("{0} {1}".format(night, standard))
+            # plt.show()
+            plt.clf()
+            ######################################################################
+            pp0.w = np.exp(logLam1)
+            pp0.wtemp = np.exp(logLam2)
+            pp0.template_linear = [wtemp, template]
+            pp0.temp = temp
+            pp0.ntemplates = 1
+            pp0.ngas = 0
+            if not os.path.exists("logs"):
+                os.mkdir("logs")
+            ppsave(pp0, "logs/{0}".format(standard.replace(".fits", "")))
     return
 
 def flux_calibration_test(velscale):
     standards_dir = os.path.join(home, "data/standards")
-    os.chdir(standards_dir)
-    standards = sorted([x for x in os.listdir(standards_dir) if
-                        x.endswith(".fits")])
-    fibers = np.array([int(x.split(".")[1]) for x in standards])
-    cmap = cm.get_cmap("rainbow")
-    for i,standard in enumerate(standards):
-        if not os.path.exists("logs/{0}".format(standard)):
-            continue
-        pp = ppload("logs/{0}".format(standard.replace(".fits", "")))
-        pp = pPXF(standard, velscale, pp)
-        h = pf.getheader(standard)
-        # plt.plot(pp.w, pp.galaxy, "-k")
-        # plt.plot(pp.w, pp.bestfit, "-r")
-        plt.plot(pp.w, pp.mpoly, "-", c=cmap(fibers[i]/140.))
+    for night in nights:
+        os.chdir(os.path.join(standards_dir, night))
+        standards = sorted([x for x in os.listdir(".") if
+                            x.endswith(".fits")])
+        standards = [x for x in standards if
+                     os.path.exists("logs/{0}".format(x))]
+        fibers = np.array([int(x.split(".")[1]) for x in standards])
+        cmap = cm.get_cmap("rainbow")
+        color = np.linspace(0,1,len(nights))
+        for i,standard in enumerate(standards):
+            pp = ppload("logs/{0}".format(standard.replace(".fits", "")))
+            pp = pPXF(standard, velscale, pp)
+            h = pf.getheader(standard)
+            # plt.plot(pp.w, pp.galaxy, "-k")
+            # plt.plot(pp.w, pp.bestfit, "-r")
+            lab = night if i == 0 else None
+            plt.plot(pp.w, pp.mpoly, "-", c=cmap(color[nights.index(night)]),
+                         label=lab)
+    plt.legend(loc=0)
     plt.show()
     return
 
+def run_candidates(velscale, filenames=None):
+    """ Run pPXF over candidates. """
+    os.chdir(data_dir)
+    log_dir = os.path.join(data_dir, "logs")
+    if not os.path.exists(log_dir):
+        os.mkdir(log_dir)
+    if filenames is None:
+        filenames = [x for x in os.listdir(".") if x.endswith(".fits")]
+    for night in nights:
+        print night
+        nspecs = sorted([x for x in os.listdir(".") if \
+                x.endswith("{0}.fits".format(night))])
+        specs = [x for x in filenames if x in nspecs]
+        if len(specs) == 0:
+            continue
+        os.chdir(os.path.join(home, "data/combined", night))
+        skies =  sorted([x for x in os.listdir(".") if x.startswith("sky") and
+                         x.endswith(".fits")])
+        specs.sort()
+        skies.sort()
+        sky = load_sky(skies, velscale)
+        os.chdir(data_dir)
+        # #################################################################
+        # # Go to the main routine of fitting
+        run_ppxf(specs, velscale, ncomp=1, has_emission=False, mdegree=12,
+                 degree=-1, plot=True, sky=sky, start=[4334., 30])
+    return
+
+def make_table():
+    """ Make table with results. """
+    head = ("{0:<30}{1:<14}{2:<14}{3:<14}{4:<14}{5:<14}{6:<14}{7:<14}"
+             "{8:<14}{9:<14}{10:<14}{11:<14}{12:<14}\n".format("# FILE",
+             "V", "dV", "S", "dS", "h3", "dh3", "h4", "dh4", "chi/DOF",
+             "S/N (/ pixel)", "ADEGREE", "MDEGREE"))
+    os.chdir(data_dir)
+    specs = sorted([x for x in os.listdir(".") if x.endswith(".fits")])
+    results = []
+    for spec in specs:
+        print spec
+        vhelio = pf.getval(spec, "VHELIO")
+        output = os.path.join(data_dir, "ppxf_results.dat")
+        pp = ppload("logs/" + spec.replace(".fits", ""))
+        pp = pPXF(spec, velscale, pp)
+        sol = pp.sol if pp.ncomp == 1 else pp.sol[0]
+        sol[0] += vhelio
+        error = pp.error if pp.ncomp == 1 else pp.error[0]
+        cond = error[1] > 300. and pp.sn > 10.
+        name = spec if cond else "#{0}".format(spec)
+        line = np.zeros((sol.size + error.size,))
+        line[0::2] = sol
+        line[1::2] = error
+        line = np.append(line, [pp.chi2, pp.sn])
+        line = ["{0:12.3f}".format(x) for x in line]
+        line = ["{0:30s}".format(name)] + line + \
+               ["{0:12}".format(pp.degree), "{0:12}".format(pp.mdegree)]
+        results.append("".join(line))
+    # Append results to outfile
+    with open(output, "w") as f:
+        f.write(head)
+        f.write("\n".join(results))
 
 if __name__ == '__main__':
     # run_stellar_templates(velscale)
-    flux_calibration_test(velscale)
+    # flux_calibration_test(velscale)
     # run_list("blanco10n1", ["hcg62_14.fits"])
     # run_over_all()
+    run_candidates(velscale, filenames=["hcg62_7_blanco10n2.fits"])
     # plot_all()
-
-
+    # make_table()

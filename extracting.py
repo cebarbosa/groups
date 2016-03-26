@@ -35,7 +35,7 @@ if __name__ == "__main__":
     outhome = '/home/kadu/Dropbox/groups/data/reduced'
     dirs = [x for x in os.listdir(home) if
             os.path.isdir(os.path.join(home, x))]
-    spectype = '1'
+    spectype = '0'
     coords = []
     for night in nights:
         wdir = os.path.join(home, night)

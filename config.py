@@ -9,7 +9,7 @@ Configuration file for the work in the groups of galaxies for my PhD work.
 
 home = "/home/kadu/Dropbox/groups"
 templates_dir = home + "/miles_models"
-data_dir = home + "/data/combined"
+data_dir = home + "/data/candidates"
 tables_dir = home + "/tables"
 
 

@@ -15,13 +15,16 @@ from config import *
 
 def rename(l1, l2):
     for n1, n2 in zip(l1, l2):
+        if not os.path.exists(n1):
+            Warning("File {0} does not exists!".format(n1))
+            continue
         print "%s --> %s" % (n1, n2)
         os.rename(n1, n2)
         
 if __name__ == "__main__":
-    dirs = os.listdir(data_dir)
-    for d in dirs:
-        os.chdir(os.path.join(data_dir, d))
+    wdir = os.path.join(home, "data/reduced")
+    for night in nights:
+        os.chdir(os.path.join(wdir, night))
         objs = [x for x in os.listdir(".") if x.startswith("crobj") and
                 x.endswith(".fits")]
         skies =  [x for x in os.listdir(".") if x.startswith("crobj") and

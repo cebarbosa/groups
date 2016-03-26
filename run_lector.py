@@ -14,14 +14,14 @@ import pyfits as pf
 from scipy.interpolate import NearestNDInterpolator as interpolator
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
 
 from config import *
 import lector as lector
 from run_ppxf import pPXF, ppload, wavelength_array, losvd_convolve
 
-def correct_indices(indices, inderr, indtempl, indtempl_b):
+def correct_indices(bands, lick, unbroad, broad):
     """ Make corrections for the broadening in the spectra."""
-    bands = os.path.join(tables_dir, "bands.txt")
     types = np.loadtxt(bands, usecols=(8,))
     corrected = np.zeros_like(indices)
     errors = np.zeros_like(indices)
@@ -217,11 +217,14 @@ def make_table(fields, targetSN, ltype="corr"):
 def lick_standards_table():
     """ Prepare a table with the Lick indices of the standard stars"""
     folder = os.path.join(home, "data/standards")
-    fits = [x for x in os.listdir(folder) if x.endswith(".fits")]
+    fits = []
+    for night in nights:
+        fits += os.listdir(os.path.join(folder, night))
     stars = [x.split(".")[0].lower() for x in fits]
     stars = [x.upper() for x in stars if x.startswith("hr") or
              x.startswith("hd")]
     stars = list(set([x.replace("HD0", "HD") for x in stars]))
+    stars = list(set([x.replace("HR0", "HR") for x in stars]))
     table = os.path.join(tables_dir, "lick_standards.dat")
     with open(table) as f:
         header = f.readline()
@@ -249,9 +252,139 @@ def lick_standards_table():
     with open(os.path.join(tables_dir, "lick_standards.txt"), "w") as f:
         f.write("\n".join(table))
 
-if __name__ == "__main__":
+def run_standard_stars(velscale, bands):
+    """ Run lector on standard stars to study instrumental dependencies. """
+    stars_dir = os.path.join(home, "data/standards")
+    table = os.path.join(tables_dir, "lick_standards.txt")
+    ids = np.loadtxt(table, usecols=(0,), dtype=str).tolist()
+    lick_ref = np.loadtxt(table, usecols=np.arange(1,26))
+    ref, obs = [], []
+    for night in nights:
+        os.chdir(os.path.join(stars_dir, night))
+        stars = [x for x in os.listdir(".") if x.endswith(".fits")]
+        for star in stars:
+            ppfile = "logs/{0}".format(star.replace(".fits", ""))
+            if not os.path.exists(ppfile + ".pkl"):
+                continue
+            name = star.split(".")[0].upper()
+            if name not in ids:
+                continue
+            print name
+            idx = ids.index(name)
+            lick_star = lick_ref[idx]
+            pp = ppload("logs/{0}".format(star.replace(".fits", "")))
+            pp = pPXF(star, velscale, pp)
+            wtemp, temp = pp.template_linear
+            mpoly = np.interp(pp.wtemp, pp.w, pp.mpoly)
+            spec = pf.getdata(star)
+            w = wavelength_array(star, axis=1, extension=0)
+            best_unbroad_v0 = mpoly * pp.star.dot(pp.w_ssps)
+            best_broad_v0 = losvd_convolve(best_unbroad_v0, pp.sol,
+                                                velscale)
+            #################################################################
+            # Broadening to Lick system
+            spec = lector.broad2lick(w, spec, 3.6, vel=pp.sol[0])
+            best_unbroad_v0 = lector.broad2lick(pp.wtemp, best_unbroad_v0,
+                                                3.6, vel=pp.sol[0])
+            best_broad_v0 = lector.broad2lick(pp.wtemp, best_broad_v0, 3.6,
+                                              vel=pp.sol[0])
+            ##################################################################
+            lick, lickerr = lector.lector(w, spec, np.ones_like(w), bands,
+                                          vel=pp.sol[0])
+            lick_unb, tmp = lector.lector(pp.wtemp, best_unbroad_v0,
+                             np.ones_like(pp.wtemp), bands, vel=pp.sol[0])
+            lick_br, tmp = lector.lector(pp.wtemp, best_broad_v0,
+                             np.ones_like(pp.wtemp), bands, vel=pp.sol[0])
+            lickm = multi_corr(lick, lick_unb, lick_br)
+            ref.append(lick_star)
+            obs.append(lickm)
+    with open(os.path.join(tables_dir, "stars_lick_val_mcorr.txt"), "w") as f:
+        np.savetxt(f, np.array(ref))
+    with open(os.path.join(tables_dir, "stars_lick_obs_mcorr.txt"), "w") as f:
+        np.savetxt(f, np.array(obs))
+    return
+
+def add_corr(lick, unbroad, broad):
+    return lick + unbroad - broad
+
+def multi_corr(lick, unbroad, broad):
+    return lick * (unbroad / broad)
+
+def plot_standard(corr="mcorr"):
+    os.chdir(tables_dir)
+    ref = np.loadtxt("stars_lick_val_{0}.txt".format(corr)).T
+    obs = np.loadtxt("stars_lick_obs_{0}.txt".format(corr)).T
+    bands = np.loadtxt("bands_matching_standards.txt", usecols=(0,), dtype=str)
+    fig = plt.figure(1, figsize=(20,12))
+    gs = GridSpec(5,5)
+    gs.update(left=0.08, right=0.98, top=0.98, bottom=0.06, wspace=0.25,
+              hspace=0.4)
+    for i in range(25):
+        ax = plt.subplot(gs[i])
+        ax.minorticks_on()
+        ax.plot(obs[i], obs[i] - ref[i], "ok")
+        ax.axhline(y=0, ls="--", c="k")
+        lab = "${0:.2f}\pm{1:.2f}$".format(np.nanmedian(obs[i] - ref[i]), mad(obs[i] - ref[i]))
+        ax.axhline(y=np.nanmedian(obs[i] - ref[i]), ls="--", c="r", label=lab)
+        ax.set_xlabel(bands[i].replace("_", " "))
+        ax.legend(loc=1,prop={'size':15})
+    output = os.path.join(home, "plots/lick_stars_{0}.png".format(corr))
+    plt.savefig(output)
+
+def mad(a):
+    return 1.48 * np.nanmedian(np.abs(a - np.nanmedian(a)))
+
+def test_lector():
+    os.chdir(os.path.join(home, "MILES"))
     bands = os.path.join(tables_dir, "bands.txt")
-    lick_standards_table()
+    filename = "lector_tmputH9bu.list_LINE"
+    stars = np.loadtxt(filename, usecols=(0,),
+                       dtype=str)
+    ref = np.loadtxt(filename,
+             usecols=(2,3,4,5,6,7,8,9,14,15,16,17,18,24,25,26,
+                      27,28,29,30,31,32,33,34,35))
+    obs = []
+    for i, star in enumerate(stars):
+        print star + ".fits"
+        spec = pf.getdata(star + ".fits")
+        h = pf.getheader(star + ".fits")
+        w = h["CRVAL1"] + h["CDELT1"] * \
+                            (np.arange(h["NAXIS1"]) + 1 - h["CRPIX1"])
+        lick, tmp = lector.lector(w, spec, np.ones_like(w), bands, interp_kind="linear")
+        obs.append(lick)
+    obs = np.array(obs)
+    fig = plt.figure(1, figsize=(20,12))
+    gs = GridSpec(5,5)
+    gs.update(left=0.08, right=0.98, top=0.98, bottom=0.06, wspace=0.25,
+              hspace=0.4)
+    obs = obs.T
+    ref = ref.T
+    names = np.loadtxt(bands, usecols=(0,), dtype=str)
+    units = np.loadtxt(bands, usecols=(9,), dtype=str).tolist()
+    units = [x.replace("Ang", "\AA") for x in units]
+    for i in range(25):
+        ax = plt.subplot(gs[i])
+        plt.locator_params(axis="x", nbins=6)
+        ax.minorticks_on()
+        ax.plot(obs[i], obs[i] - ref[i], "o", color="0.5")
+        ax.axhline(y=0, ls="--", c="k")
+        lab = "median $= {0:.3f}$".format(
+            np.nanmedian(obs[i] - ref[i])).replace("-0.00", "0.00")
+        ax.axhline(y=np.nanmedian(obs[i] - ref[i]), ls="--", c="r", label=lab)
+        ax.set_xlabel("{0} ({1})".format(names[i].replace("_", " "), units[i]))
+        ax.legend(loc=1,prop={'size':15})
+        ax.set_ylim(-0.05, 0.05)
+    fig.text(0.02, 0.5, 'I$_{{\\rm pylector}}$ - I$_{{\\rm lector}}$', va='center',
+             rotation='vertical', size=40)
+    output = os.path.join(home, "plots/test_lector.png")
+    plt.savefig(output)
+
+if __name__ == "__main__":
+    test_lector()
+    # run_standard_stars(velscale,
+    #                    os.path.join(tables_dir, "bands_matching_standards.txt"))
+    # plot_standard()
+    # lick_standards_table()
     # specs, nights = np.loadtxt(os.path.join(tables_dir, "spec_location.txt"),
     #                            dtype=str, usecols=(0,1)).T
     # run(nights[3:], specs[3:])
