@@ -26,9 +26,9 @@ if __name__ == "__main__":
         specs = np.loadtxt(table, usecols=(0,), dtype=str)
         specs = [x.replace("-", "_") for x in specs]
         specs = np.array(["_".join([group] + x.split("_")[1:]) for x in specs])
-        vs = np.loadtxt(table, usecols=(1,))
+        vs, verr = np.loadtxt(table, usecols=(1,2)).T
         idx = np.abs(vs - v0s[group]) < 2000.
-        for spec, v in zip(specs[idx], vs[idx]):
+        for spec, v, ver in zip(specs[idx], vs[idx], verr[idx]):
             if spec.replace(".fits", "") not in candidates:
-                print spec, v
+                print spec, v, ver
         print "\n"
