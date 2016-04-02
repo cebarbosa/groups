@@ -122,8 +122,8 @@ def run_ppxf(spectra, velscale, ncomp=None, has_emission=True, mdegree=-1,
         ######################################################################
         # Set first guess from setup files
         if start == None:
-            start = [v0s[spec.split("_")[0]], 100]
-        goodPixels = None
+            start = [v0s[spec.split("_")[0]], 50]
+            goodPixels = None
         ######################################################################
         # Expand start variable to include multiple components
         if ncomp > 1:
@@ -131,15 +131,15 @@ def run_ppxf(spectra, velscale, ncomp=None, has_emission=True, mdegree=-1,
         ######################################################################
         # First pPXF interaction
         pp0 = ppxf(templates, galaxy, noise, velscale, start,
-                   goodpixels=goodPixels, plot=False, moments=moments,
+                   goodpixels=None, plot=False, moments=moments,
                    degree=12, mdegree=-1, vsyst=dv, component=components,
                    sky=sky)
-        rms0 = galaxy[goodPixels] - pp0.bestfit[goodPixels]
+        rms0 = galaxy - pp0.bestfit
         noise0 = 1.4826 * np.median(np.abs(rms0 - np.median(rms0)))
         noise0 = np.zeros_like(galaxy) + noise0
         # Second pPXF interaction, realistic noise estimation
         pp = ppxf(templates, galaxy, noise0, velscale, start,
-                  goodpixels=goodPixels, plot=False, moments=moments,
+                  goodpixels=None, plot=False, moments=moments,
                   degree=degree, mdegree=mdegree, vsyst=dv,
                   component=components, sky=sky)
         plt.title(spec.replace("_", "-"))
@@ -285,6 +285,7 @@ class pPXF():
     """ Class to read pPXF pkl files """
     def __init__(self, spec, velscale, pp):
         self.__dict__ = pp.__dict__.copy()
+        self.spec = spec
         self.dw = 0.7 # Angstrom / pixel
         self.calc_arrays()
         self.calc_sn()
@@ -408,85 +409,12 @@ class pPXF():
         ax1.plot(self.w[self.goodpixels], (self.galaxy[self.goodpixels] - \
                  self.bestfit[self.goodpixels]), "-k")
         ax1.axhline(y=0, ls="--", c="k")
-        ax1.set_ylim(-5 * self.noise, 5 * self.noise)
+        # ax1.set_ylim(-5 * self.noise, 5 * self.noise)
         ax1.set_xlabel(r"$\lambda$ ($\AA$)", size=18)
         ax1.set_ylabel(r"$\Delta$Flux", size=18)
         gs.update(hspace=0.075, left=0.15, bottom=0.1, top=0.98, right=0.97)
         plt.savefig(output)
-
-    def plot2(self, output, xlims = [4000, 6500], fignumber=1, textsize = 16):
-        """ Plot pPXF run in a output file"""
-        if self.ncomp > 1:
-            sol = self.sol[0]
-            error = self.error[0]
-            sol2 = self.sol[1]
-            error2 = self.error[1]
-        else:
-            sol = self.sol
-            error = self.error
-        plt.figure(fignumber)
-        plt.clf()
-        gs = gridspec.GridSpec(5, 1)
-        ax = plt.subplot(gs[0])
-        ax.minorticks_on()
-        lab0 = "{0}, S/N={1:.1f}".format(self.spec.replace("_","-" \
-                                              ).replace(".fits", ""), self.sn)
-        ax.plot(self.w, self.galaxy, "-k", lw=2., label=lab0)
-        leg = plt.legend(loc=0, prop={"size":10})
-        leg.get_frame().set_linewidth(0.0)
-        ax1 = plt.subplot(gs[1])
-        ax1.minorticks_on()
-        ax1.plot(self.w[self.goodpixels], self.ssps[self.goodpixels]+self.poly,
-                "-", lw=1, c="r", label="SSPs")
-        ax1.xaxis.set_ticklabels([])
-        leg = plt.legend(loc=0, prop={"size":10})
-        leg.get_frame().set_linewidth(0.0)
-        if self.has_emission:
-            ax2 = plt.subplot(gs[2])
-            ax2.plot(self.w[self.goodpixels], self.gas[self.goodpixels], "-b",
-                    lw=1., label="Emission Lines")
-            ax2.xaxis.set_ticklabels([])
-            ax2.set_xlim(self.w[0], self.w[-1])
-            leg = plt.legend(loc=0, prop={"size":10})
-            leg.get_frame().set_linewidth(0.0)
-        if self.sky != None:
-            ax3 = plt.subplot(gs[3])
-            ax3.plot(self.w[self.goodpixels], self.bestsky[self.goodpixels], \
-                    "-", lw=1, c="g", label="Sky")
-            ax3.xaxis.set_ticklabels([])
-            ax3.set_xlim(self.w[0], self.w[-1])
-            leg = plt.legend(loc=0, prop={"size":10})
-            leg.get_frame().set_linewidth(0.0)
-        ax4 = plt.subplot(gs[4])
-        ax4.minorticks_on()
-        ax.set_xlim(self.w[0], self.w[-1])
-        ax1.set_xlim(self.w[0], self.w[-1])
-        ax4.plot(self.w[self.goodpixels], self.galaxy[self.goodpixels] - \
-                 self.bestfit[self.goodpixels], "-k")
-        ax4.axhline(y=0, ls="--", c="k")
-        ax4.axhline(y=self.noise, ls="--", c="r")
-        ax4.axhline(y=-self.noise, ls="--", c="r")
-        ax4.set_xlabel(r"$\lambda$ ($\AA$)", size=18)
-        ax.xaxis.set_ticklabels([])
-        ax4.set_ylabel(r"$\Delta$Flux", size=18)
-        plt.axhline(y=0, ls="--", c="k")
-        plt.ylabel(r"Flux (Counts)", size=18)
-        plt.tight_layout()
-        plt.annotate(r"V={0} km/s".format(np.around(sol[0])),
-                     xycoords='axes fraction', xy=(0.45,0.9), size=textsize,
-                     color="r")
-        plt.annotate(r"$\sigma$={0} km/s".format(np.around(sol[1])),
-                     xycoords='axes fraction', xy=(0.75,0.9), size=textsize,
-                     color="r")
-        if self.ncomp > 1:
-            plt.annotate(r"V={0} km/s".format(np.around(sol2[0])),
-                         xycoords='axes fraction', xy=(0.45,0.88),
-                         size=textsize, color="b")
-            plt.annotate(r"$\sigma$={0} km/s".format(np.around(sol2[1])),
-                         xycoords='axes fraction', xy=(0.75,0.88),
-                         size=textsize, color="b")
-        gs.update(hspace=0.2, left=0.15, bottom=0.1, top=0.98, right=0.97)
-        plt.savefig(output)
+        return
 
 def fits_to_matrix(filenames):
     """ Load several fits of the same dimension into a matrix.  """
@@ -629,6 +557,20 @@ def run_list(night, specs, start=None):
                  degree=12, plot=True, sky=sky, start=start,
              moments=[4, 2])
 
+def run_not_combined(velscale):
+    """ Run pPXF on files without multiple exposures. """
+    wdir = os.path.join(home, "data/single/blanco10n2")
+    start = [0, 50]
+    os.chdir(wdir)
+    fits = [x for x in os.listdir(".") if x.endswith(".fits")]
+    skies =  sorted([x for x in fits if "sky" in x])
+    specs = sorted([x for x in fits if x not in skies])
+    specs = ["crobj248_hcg62_n0167.fits"]
+    sky, loglam = load_sky(skies, velscale, full_output=True)
+    # make_sky_fig(sky, loglam, skies)]
+    run_ppxf(specs, velscale, ncomp=1, has_emission=1, mdegree=-1,
+                 degree=20, plot=True, sky=sky, start=start, moments=4)
+
 def make_sky_fig(skies, loglam, filenames):
     w = np.exp(loglam)
     fig = plt.figure(1)
@@ -677,21 +619,28 @@ def run_stellar_templates(velscale):
                                                        velscale=velscale)
             noise = np.ones_like(star)
             dv = (logLam2[0]-logLam1[0])*c
-            pp0 = ppxf(temp, star, noise, velscale, [300.,20], plot=False,
-                       moments=2, degree=-1, mdegree=25, vsyst=dv)
-            plt.title("{0} {1}".format(night, standard))
-            # plt.show()
-            plt.clf()
-            ######################################################################
+            pp0 = ppxf(temp, star, noise, velscale, [300.,5], plot=False,
+                       moments=2, degree=20, mdegree=-1, vsyst=dv, quiet=True)
+            noise = np.ones_like(noise) * np.nanstd(star - pp0.bestfit)
+            pp0 = ppxf(temp, star, noise, velscale, [0.,5], plot=False,
+                       moments=2, degree=20, mdegree=-1, vsyst=dv)
             pp0.w = np.exp(logLam1)
             pp0.wtemp = np.exp(logLam2)
             pp0.template_linear = [wtemp, template]
             pp0.temp = temp
             pp0.ntemplates = 1
             pp0.ngas = 0
+            pp0.has_emission = False
+            pp0.dv = dv
+            pp0.velscale = velscale
+            pp0.ngas = 0
+            pp0.nsky = 0
             if not os.path.exists("logs"):
                 os.mkdir("logs")
             ppsave(pp0, "logs/{0}".format(standard.replace(".fits", "")))
+            pp = ppload("logs/{0}".format(standard.replace(".fits", "")))
+            pp = pPXF(standard, velscale, pp)
+            pp.plot("logs/{0}".format(standard.replace(".fits", ".png")))
     return
 
 def flux_calibration_test(velscale):
@@ -742,8 +691,8 @@ def run_candidates(velscale, filenames=None):
         os.chdir(data_dir)
         # #################################################################
         # # Go to the main routine of fitting
-        run_ppxf(specs, velscale, ncomp=1, has_emission=False, mdegree=12,
-                 degree=-1, plot=True, sky=sky, start=[4334., 30])
+        run_ppxf(specs, velscale, ncomp=1, has_emission=False, mdegree=-1,
+                 degree=20, plot=True, sky=sky)
     return
 
 def make_table():
@@ -778,12 +727,29 @@ def make_table():
     with open(output, "w") as f:
         f.write(head)
         f.write("\n".join(results))
+    return
 
+def make_table_standards():
+    standards_dir = os.path.join(home, "data/standards")
+    for night in nights:
+        print night
+        os.chdir(os.path.join(standards_dir, night))
+        specs = sorted([x for x in os.listdir(".") if x.endswith(".fits")])
+        for spec in specs:
+            try:
+                pp = ppload("logs/" + spec.replace(".fits", ""))
+                pp = pPXF(spec, velscale, pp)
+                print spec, pp.sol
+            except:
+                continue
 if __name__ == '__main__':
+    pass
     # run_stellar_templates(velscale)
+    # make_table_standards()
     # flux_calibration_test(velscale)
     # run_list("blanco10n1", ["hcg62_14.fits"])
     # run_over_all()
-    run_candidates(velscale, filenames=["hcg62_7_blanco10n2.fits"])
+    # run_candidates(velscale, filenames=["hcg62_n0147_blanco10n2.fits"])
+    # run_not_combined(velscale)
     # plot_all()
     # make_table()
