@@ -8,7 +8,7 @@ Configuration file for the work in the groups of galaxies for my PhD work.
 """
 
 home = "/home/kadu/Dropbox/groups"
-templates_dir = home + "/miles_models"
+templates_dir = home + "/MILES"
 data_dir = home + "/data/candidates"
 tables_dir = home + "/tables"
 
@@ -19,7 +19,7 @@ FWHM_tem = 3.6 # MILES library spectra have a resolution FWHM of 2.54A.
 FWHM_spec = 3.6 # FWHM of data
 
 # Resolution for binning with pPXF
-velscale = 30. # km/s
+velscale = 20. # km/s
 
 # Velocities of the groups according to NED
 v0s = dict([("hcg22", 2698.), ("hcg62", 4413.), ("hcg90", 2638.),
