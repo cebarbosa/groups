@@ -140,10 +140,10 @@ def lector(wl, intens, noise, infile, vel=0, cols=(0,8,2,3,4,5,6,7),
     return results, errors
     
 def broad2lick(wl, intens, obsres, vel=0):
-    """ Convolve spectra to Lick resolution. 
+    """ Convolve spectra to match the Lick resolution.
         
     Broad a given spectra to the Lick system resolution. As the resolution 
-    in the Lick system varies as function of the wavelenght, we use the 
+    in the Lick system varies as function of the wavelength, we use the
     interpolated values from Worthey and Ottaviani 1997.
     
     ================
@@ -156,7 +156,7 @@ def broad2lick(wl, intens, obsres, vel=0):
         Intensity 1-D array of Intensity, in arbitrary units. The lenght has 
         to be the same as wl. 
         
-    obsres: float
+    obsres: float or array
         Value of the observed resolution Full Width at Half Maximum (FWHM) in 
         Angstroms.
 
@@ -170,14 +170,21 @@ def broad2lick(wl, intens, obsres, vel=0):
         The convolved intensity 1-D array.
     
     """
+    dw = wl[1] - wl[0]
+    if not isinstance(obsres, np.ndarray):
+        obsres = np.ones_like(wl) * obsres
     wlick = np.array([2000., 4000., 4400., 4900., 5400., 6000., 8000.]) * \
             np.sqrt((1 + vel/c)/(1 - vel/c))
     lickres = np.array([11.5, 11.5, 9.2, 8.4, 8.4, 9.8, 9.8])
-    sigma_b = np.sqrt(lickres * lickres - obsres * obsres) / 2.3548
-    sigmas = interp1d(wlick, sigma_b, kind="linear")(wl)
+    flick = interp1d(wlick, lickres, kind="linear", bounds_error=False,
+                         fill_value="extrapolate")
+    fwhm_lick = flick(wl)
+    fwhm_broad = np.sqrt(fwhm_lick**2 - obsres**2)
+
+    sigma_b = fwhm_broad/ 2.3548 / dw
     intens2D = np.diag(intens)
-    for i in range(len(sigmas)):
-        intens2D[i] = gaussian_filter1d(intens2D[i], sigmas[i], 
+    for i in range(len(sigma_b)):
+        intens2D[i] = gaussian_filter1d(intens2D[i], sigma_b[i],
                       mode="constant", cval=0.0)
     return intens2D.sum(axis=0)
     
