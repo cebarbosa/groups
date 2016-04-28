@@ -12,11 +12,12 @@ from run_ppxf import *
 
 def match_resolution(velscale):
     """ Run over stellar templates. """
-    temp_dir = os.path.join(home, "stellar_templates/MILES_FWHM_2.5")
+    temp_dir = os.path.join(home, "miles_models")
     standards_dir = os.path.join(home, "data/standards")
     table = os.path.join(tables_dir, "lick_standards.txt")
     ids = np.loadtxt(table, usecols=(0,), dtype=str).tolist()
     star_pars = np.loadtxt(table, usecols=(26,27,28,))
+    results = []
     for night in nights:
         cdir = os.path.join(standards_dir, night)
         os.chdir(cdir)
@@ -30,6 +31,9 @@ def match_resolution(velscale):
             tempfile= "MILES_Teff{0:.2f}_Logg{1:.2f}_MH{2:.2f}" \
                        "_linear_FWHM_2.50.fits".format(T, logg, FeH )
             os.chdir(temp_dir)
+            if not os.path.exists(tempfile):
+                os.chdir(cdir)
+                continue
             template = pf.getdata(tempfile)
             htemp = pf.getheader(tempfile)
             wtemp = htemp["CRVAL1"] + htemp["CDELT1"] * \
@@ -44,31 +48,83 @@ def match_resolution(velscale):
                                                        velscale=velscale)
             temp, logLam2, velscale = util.log_rebin(lamRange2, template,
                                                        velscale=velscale)
-            noise = np.ones_like(star)
-            dv = (logLam2[0]-logLam1[0])*c
-            pp0 = ppxf(temp, star, noise, velscale, [300.,5], plot=False,
-                       moments=2, degree=20, mdegree=-1, vsyst=dv, quiet=True)
-            noise = np.ones_like(noise) * np.nanstd(star - pp0.bestfit)
-            pp0 = ppxf(temp, star, noise, velscale, [0.,5], plot=False,
-                       moments=2, degree=20, mdegree=-1, vsyst=dv)
-            pp0.w = np.exp(logLam1)
-            pp0.wtemp = np.exp(logLam2)
-            pp0.template_linear = [wtemp, template]
-            pp0.temp = temp
-            pp0.ntemplates = 1
-            pp0.ngas = 0
-            pp0.has_emission = False
-            pp0.dv = dv
-            pp0.velscale = velscale
-            pp0.ngas = 0
-            pp0.nsky = 0
-            if not os.path.exists("logs"):
-                os.mkdir("logs")
-            ppsave(pp0, "logs/{0}".format(standard.replace(".fits", "")))
-            pp = ppload("logs/{0}".format(standard.replace(".fits", "")))
-            pp = pPXF(standard, velscale, pp)
-            pp.plot("logs/{0}".format(standard.replace(".fits", ".png")))
+            ##################################################################
+            # First run to set errors
+            idx0 = np.where((4000.<np.exp(logLam1)) & (np.exp(logLam1)<5500))
+            star0 = star[idx0]
+            logLam0 = logLam1[idx0]
+            dv0 = (logLam2[0]-logLam0[0])*c
+            noise0 = np.ones_like(star0)
+            pp0 = ppxf(temp, star0, noise0, velscale, [0.,5], plot=False,
+                       moments=2, degree=20, mdegree=-1, vsyst=dv0, quiet=True)
+            noise = np.std(pp0.bestfit - pp0.galaxy)
+            ##################################################################
+            deltaw = 300
+            wtest = np.arange(4000., 6300, 100)
+            for w1 in wtest:
+                w2 = w1 + deltaw
+                idx1 = np.where((w1<np.exp(logLam1)) & (np.exp(logLam1)<w2))
+                idx2 = np.where((w1-50<np.exp(logLam2)) & (np.exp(logLam2)<w2+50))
+                star1 = star[idx1]
+                logLam3 = logLam1[idx1]
+                logLam4 = logLam1[idx2]
+                temp1 = temp[idx2]
+                dv1 = (logLam2[idx2][0]-logLam3[0])*c
+                noise1 = np.ones_like(star1) * noise
+                pp1= ppxf(temp1, star1, noise1, velscale, [0.,5], plot=False,
+                          moments=2, degree=20, mdegree=-1, vsyst=dv1,
+                          quiet=True)
+                print w1 + 0.5 * deltaw, pp1.sol[1], pp1.error[1]
+                results.append([w1 + 0.5 * deltaw, pp1.sol[1], pp1.error[1]])
+    results = np.array(results)
+    with open(os.path.join(tables_dir, "w_sig_standard.dat"),"w") as f:
+        np.savetxt(f, results)
+    return
+
+def plot():
+    filename = os.path.join(tables_dir, "w_sig_standard.dat")
+    sig2fwhm = 2.335
+    wave, sigma, err = np.loadtxt(filename).T
+    fig, ax = plt.subplots()
+    ax.minorticks_on()
+    ws, ms = [], []
+    for w in np.unique(wave):
+        label = "Standard Stars" if w==wave[0] else None
+        idx = np.where(wave==w)
+        ax.plot(wave[idx], sigma[idx], ".", color="0.8", label=label,
+                marker=(5,1,0), ms=10, mec="0.6")
+        ws.append(w)
+        ms.append(np.median(sigma[idx]))
+    ax.plot(ws, ms, "sr", mec="r", label="Median Velocity\nDispersion", ms=8)
+    obsres = np.array(ws) * np.array(ms) / c * sig2fwhm
+    res = np.sqrt(obsres**2 + 2.5**2)
+    z = np.polyfit(ws, res, 5)
+    print z
+    p = np.poly1d(z)
+    w = np.linspace(4000., 6500, 2500)
+    # ax.plot(w, p(w), "-r", label="Best fit")
+    ax.set_ylim(0,220)
+    ax.set_xlabel("Wavelength (\AA)")
+    ax.set_ylabel("$\sigma$ (km/s)", color="r")
+    plt.legend(loc=0, frameon=False,prop={'size':16})
+    ax2 = ax.twinx()
+    ax2.minorticks_on()
+    ax2.plot(ws, res, "ob", ms=8, mec="none", label="Hydra-CTIO\n resolution")
+    ax2.plot(w,p(w),"-b", label="Polynomial Fit")
+    ax2.set_ylabel("FWHM (\AA)", color="b")
+    for tl in ax2.get_yticklabels():
+        tl.set_color('b')
+    for tl in ax.get_yticklabels():
+        tl.set_color('r')
+    plt.legend(loc=0, frameon=False,prop={'size':16})
+    plt.subplots_adjust(left=0.08, right=0.92, top=0.98)
+    plt.savefig("/home/kadu/projects/thesis/figs/hydra_resolution.png",
+                dpi=200)
+    np.savetxt(os.path.join(tables_dir, "wave_fwhm_standards.dat"),
+               np.column_stack((w, p(w))))
     return
 
 if __name__ == "__main__":
-    match_resolution(velscale)
+    velscale = 3.
+    # match_resolution(velscale)
+    plot()

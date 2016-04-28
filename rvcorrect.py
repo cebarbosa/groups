@@ -27,14 +27,15 @@ if __name__ == "__main__":
         if "VHELIO" not in h.keys():
             print
             continue
-            # try:
-            #     iraf.hedit (images=img, fields="EPOCH", value=2000., add=True,
-            #                 delete=False, verify=False, show=False,
-            #                 update=True)
-            #     iraf.rvcorrect(images=img, imupdat=True, epoch=2000.,
-            #                    ut=h["UT"], ra=h["RA"], dec=h["DEC"])
-            # except:
-            #     continue
+        # try:
+        #     iraf.hedit (images=img, fields="EPOCH", value=2000., add=True,
+        #                 delete=False, verify=False, show=False,
+        #                 update=True)
+        #     iraf.rvcorrect(images=img, imupdat=True, epoch=2000.,
+        #                    ut=h["UT"], ra=h["RA"], dec=h["DEC"])
+        # except:
+        #     print
+        #     continue
         print h["VHELIO"]
 
 

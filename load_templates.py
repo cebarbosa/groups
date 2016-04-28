@@ -12,9 +12,9 @@ import os
 
 import numpy as np
 import pyfits as pf
+from scipy.ndimage.filters import gaussian_filter1d
 
 import ppxf_util as util
-
 from config import *
 
 def load_templates_regul(velscale):
@@ -95,7 +95,7 @@ def stellar_templates(velscale):
     metal_ages = []
     for m in Zs:
         for t in Ts:
-            filename = "Mun1.30Z{0}T{1}_linear_FWHM_3.6.fits".format(m, t)
+            filename = "Mun1.30Z{0}T{1}_linear_FWHM_2.7.fits".format(m, t)
             if os.path.exists(filename):
                 miles.append(filename)
                 metal_ages.append([m.replace("_", ".").replace("p",
@@ -108,8 +108,10 @@ def stellar_templates(velscale):
                                                velscale=velscale)
     templates = np.empty((sspNew.size,len(miles)))
     for j in range(len(miles)):
-        hdu = pf.open(miles[j])
-        ssp = hdu[0].data
+        ssp = pf.getdata(miles[j])
+        w = wavelength_array(miles[j])
+        dsigma = np.sqrt((3.7**2 - 2.7**2))/2.335/(w[1]-w[0])
+        ssp = gaussian_filter1d(ssp, dsigma)
         sspNew, logLam2, velscale = util.log_rebin(lamRange2, ssp,
                                                    velscale=velscale)
         templates[:,j] = sspNew
@@ -122,10 +124,11 @@ def emission_templates(velscale):
     # Template directory is also set in setup.py
     os.chdir(templates_dir)
     emission = [x for x in os.listdir(".") if x.startswith("emission") and
-             x.endswith(".fits")]
+             x.endswith(".fits") and x not in ["emission_FWHM_2.7.fits",
+                                               "emission_FWHM_3.7.fits"]]
     emission.sort()
     c = 299792.458
-    FWHM_tem = 2.54 # MILES library spectra have a resolution FWHM of 2.54A.
+    FWHM_tem = 2.5 # MILES library spectra have a resolution FWHM of 2.54A.
     # Extract the wavelength range and logarithmically rebin one spectrum
     # to the same velocity scale of the SAURON galaxy spectrum, to determine
     # the size needed for the array which will contain the template spectra.
@@ -138,16 +141,18 @@ def emission_templates(velscale):
                                                velscale=velscale)
     templates = np.empty((sspNew.size,len(emission)))
     for j in range(len(emission)):
-        hdu = pf.open(emission[j])
-        ssp = hdu[0].data
+        ssp = pf.getdata(emission[j])
+        w = wavelength_array(emission[j])
+        dsigma = np.sqrt((3.7**2 - 2.7**2))/2.335/(w[1]-w[0])
+        ssp = gaussian_filter1d(ssp, dsigma)
         sspNew, logLam2, velscale = util.log_rebin(lamRange2, ssp,
                                                    velscale=velscale)
         templates[:,j] = sspNew
-    # templates *= 1e5 # Normalize templates
+    templates *= 1e5 # Normalize templates
     os.chdir(current_dir)
     return templates, logLam2, h2['CDELT1'], emission
 
-def emission_line_template(lines, velscale, res=3.6, intens=None, resamp=15,
+def emission_line_template(lines, velscale, res=2.7, intens=None, resamp=15,
                            return_log=True):
     lines = np.atleast_1d(lines)
     if intens == None:
@@ -175,7 +180,6 @@ def make_fits(spec, outfile):
     hdu = pf.PrimaryHDU(spec)
     miles = [x for x in os.listdir(".") if x.startswith("Mun") and
              x.endswith(".fits")][0]
-    print miles
     w0 = pf.getval(miles, "CRVAL1")
     deltaw = pf.getval(miles, "CDELT1")
     pix0 = pf.getval(miles, "CRPIX1")
@@ -200,28 +204,29 @@ def make_templates():
     hdu = pf.PrimaryHDU(templates)
     hdu2 = pf.ImageHDU(logLam2)
     hdulist = pf.HDUList([hdu, hdu2])
-    hdulist.writeto('miles_FWHM_3.6.fits', clobber=True)
-    with open('miles_FWHM_3.6.txt', "w") as f:
+    hdulist.writeto('miles_FWHM_3.7.fits', clobber=True)
+    with open('miles_FWHM_3.7.txt', "w") as f:
         f.write("\n".join(miles))
     # Gas templates
     gas_templates,logLam_gas, delta_gas, gas_files=emission_templates(velscale)
     hdu = pf.PrimaryHDU(gas_templates)
     hdu2 = pf.ImageHDU(logLam_gas)
     hdulist = pf.HDUList([hdu, hdu2])
-    hdulist.writeto('emission_FWHM_3.6.fits', clobber=True)
-    with open('emission_FWHM_3.6.txt', "w") as f:
+    hdulist.writeto('emission_FWHM_3.7.fits', clobber=True)
+    with open('emission_FWHM_3.7.txt', "w") as f:
         f.write("\n".join(gas_files))
+
 
 if __name__ == "__main__":
     os.chdir(templates_dir)
     # em_hdelta = emission_line_template(4103., velscale, return_log=0)
-    # make_fits(em_hdelta, "emission_hdelta_fwhm3.6.fits")
+    # make_fits(em_hdelta, "emission_hdelta_fwhm2.7.fits")
     # em_OIII = emission_line_template([5006.84, 4958.91], velscale,
     #                                   intens=[1,0.33], return_log=0)
     # em_hbeta = emission_line_template(4861.333, velscale, return_log=0)
     # em_NI = emission_line_template(5200.257, velscale, return_log=0)
-    # make_fits(em_OIII, "emission_OIII_fwhm3.6.fits")
-    # make_fits(em_hbeta, "emission_hbeta_fwhm3.6.fits")
-    # make_fits(em_NI, "emission_NI_fwhm3.6.fits")
+    # make_fits(em_OIII, "emission_OIII_fwhm2.7.fits")
+    # make_fits(em_hbeta, "emission_hbeta_fwhm2.7.fits")
+    # make_fits(em_NI, "emission_NI_fwhm2.7.fits")
     make_templates()
 

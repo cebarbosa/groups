@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 from matplotlib import gridspec
 import matplotlib.cm as cm
-from scipy.ndimage.filters import convolve1d
+from scipy.ndimage.filters import convolve1d, gaussian_filter1d
 
 from ppxf import ppxf
 import ppxf_util as util
@@ -64,15 +64,15 @@ def run_ppxf(spectra, velscale, ncomp=None, has_emission=True, mdegree=-1,
     ##########################################################################
     # Load templates for both stars and gas
     star_templates = pf.getdata(os.path.join(templates_dir,
-                                             'miles_FWHM_3.6.fits'), 0)
-    logLam2 = pf.getdata(os.path.join(templates_dir, 'miles_FWHM_3.6.fits'), 1)
-    miles = np.loadtxt(os.path.join(templates_dir, 'miles_FWHM_3.6.txt'),
+                                             'miles_FWHM_3.7.fits'), 0)
+    logLam2 = pf.getdata(os.path.join(templates_dir, 'miles_FWHM_3.7.fits'), 1)
+    miles = np.loadtxt(os.path.join(templates_dir, 'miles_FWHM_3.7.txt'),
                        dtype=str).tolist()
     gas_templates = pf.getdata(os.path.join(templates_dir,
-                                             'emission_FWHM_3.6.fits'), 0)
-    logLam_gas = pf.getdata(os.path.join(templates_dir, 'emission_FWHM_3.6.fits'),
+                                             'emission_FWHM_3.7.fits'), 0)
+    logLam_gas = pf.getdata(os.path.join(templates_dir, 'emission_FWHM_3.7.fits'),
                             1)
-    gas_files = np.loadtxt(os.path.join(templates_dir, 'emission_FWHM_3.6.txt'),
+    gas_files = np.loadtxt(os.path.join(templates_dir, 'emission_FWHM_3.7.txt'),
                        dtype=str).tolist()
 
     ngas = len(gas_files)
@@ -129,17 +129,20 @@ def run_ppxf(spectra, velscale, ncomp=None, has_emission=True, mdegree=-1,
         if ncomp > 1:
             start = [start, [start[0], 30]]
         ######################################################################
+        # Select goodpixels
+        w = np.exp(logLam1)
+        goodpixels = np.argwhere((w>4700) & (w<6100)).T[0]
         # First pPXF interaction
         pp0 = ppxf(templates, galaxy, noise, velscale, start,
-                   goodpixels=None, plot=False, moments=moments,
+                   goodpixels=goodpixels, plot=False, moments=moments,
                    degree=12, mdegree=-1, vsyst=dv, component=components,
                    sky=sky)
-        rms0 = galaxy - pp0.bestfit
+        rms0 = galaxy[goodpixels] - pp0.bestfit[goodpixels]
         noise0 = 1.4826 * np.median(np.abs(rms0 - np.median(rms0)))
         noise0 = np.zeros_like(galaxy) + noise0
         # Second pPXF interaction, realistic noise estimation
         pp = ppxf(templates, galaxy, noise0, velscale, start,
-                  goodpixels=None, plot=False, moments=moments,
+                  goodpixels=goodpixels, plot=False, moments=moments,
                   degree=degree, mdegree=mdegree, vsyst=dv,
                   component=components, sky=sky)
         plt.title(spec.replace("_", "-"))
@@ -150,7 +153,7 @@ def run_ppxf(spectra, velscale, ncomp=None, has_emission=True, mdegree=-1,
         pp.template_files = templates_names
         pp.has_emission = has_emission
         pp.dv = dv
-        pp.w = np.exp(logLam1)
+        pp.w = w
         pp.velscale = velscale
         pp.spec = spec
         pp.ngas = ngas
@@ -279,7 +282,7 @@ def make_table(spectra, output, mc=False, nsim=200, clean=True, pkls=None):
                 "{0:12.3f}".format(100 * sn / pp.sol[1])]
         # Append results to outfile
         with open(output, "a") as f:
-            f.write("".join(line) + "\n")
+            f.write(" ".join(line) + "\n")
 
 class pPXF():
     """ Class to read pPXF pkl files """
@@ -323,13 +326,13 @@ class pPXF():
         self.bestsky = self.m_sky.dot(self.w_sky)
         return
 
-    def calc_sn(self, w1=4200., w2=6000.):
-        idx = np.logical_and(self.w >=w1, self.w <=w2)
-        self.res = self.galaxy - self.bestfit
+    def calc_sn(self, w1=4700., w2=6000.):
+        idx = np.logical_and(self.w[self.goodpixels] >=w1,
+                             self.w[self.goodpixels] <=w2)
+        self.res = self.galaxy[self.goodpixels] - self.bestfit[self.goodpixels]
         # Using robust method to calculate noise using median deviation
         self.noise = np.nanstd(self.res[idx])
-        self.signal = np.sum(self.mpoly[idx] * (self.ssps[idx] + \
-                      self.poly[idx])) / len(self.ssps[idx]) / np.sqrt(self.dw)
+        self.signal = np.nanmedian(self.galaxy[self.goodpixels][idx])
         self.sn = self.signal / self.noise
         return
 
@@ -369,9 +372,13 @@ class pPXF():
         gs = gridspec.GridSpec(2, 1, height_ratios=[3,1])
         ax = plt.subplot(gs[0])
         ax.minorticks_on()
-        ax.plot(self.w, self.galaxy - self.bestsky, "-k", lw=2., label=self.spec.replace("_", \
-                                                    "-").replace(".fits", ""))
-        ax.plot(self.w, self.bestfit - self.bestsky, "-", lw=2., c="r", label="Bestfit")
+        ax.plot(self.w[self.goodpixels],
+                self.galaxy[self.goodpixels] - self.bestsky[self.goodpixels],
+                "-k", lw=2., label=self.spec.replace("_", \
+                "-").replace(".fits", ""))
+        ax.plot(self.w[self.goodpixels],
+                self.bestfit[self.goodpixels] - self.bestsky[self.goodpixels],
+                "-", lw=2., c="r", label="Bestfit")
         ax.xaxis.set_ticklabels([])
         if self.has_emission:
             ax.plot(self.w[self.goodpixels], self.gas[self.goodpixels], "-b",
@@ -379,9 +386,7 @@ class pPXF():
         # if self.sky != None:
         #     ax.plot(self.w[self.goodpixels], self.bestsky[self.goodpixels], \
         #             "-", lw=1, c="g", label="Sky")
-        ax.set_xlim(self.w[0], self.w[-1])
-        ax.set_ylim(-5 * self.noise, None)
-        leg = plt.legend(loc=6, prop={"size":10})
+        leg = plt.legend(loc=4, prop={"size":10}, frameon=False)
         leg.get_frame().set_linewidth(0.0)
         plt.axhline(y=0, ls="--", c="k")
         plt.ylabel(r"Flux (Counts)", size=18)
@@ -403,9 +408,12 @@ class pPXF():
             plt.annotate(r"$\sigma$={0} km/s".format(np.around(sol2[1])),
                          xycoords='axes fraction', xy=(0.75,0.84),
                          size=textsize, color="b")
+        ax.set_xlim(self.w[self.goodpixels][0], self.w[self.goodpixels][-1])
+        ylim = plt.ylim()
+        ax.set_ylim(ylim[0], 1.2 * ylim[1])
         ax1 = plt.subplot(gs[1])
         ax1.minorticks_on()
-        ax1.set_xlim(self.w[0], self.w[-1])
+        ax1.set_xlim(self.w[self.goodpixels][0], self.w[self.goodpixels][-1])
         ax1.plot(self.w[self.goodpixels], (self.galaxy[self.goodpixels] - \
                  self.bestfit[self.goodpixels]), "-k")
         ax1.axhline(y=0, ls="--", c="k")
@@ -472,7 +480,7 @@ def select_specs():
             plt.imshow(img)
             plt.axis("off")
             plt.pause(0.001)
-            plt.show()
+            # plt.show()
             comm = raw_input("Skip this spectrum in the anaylis? (y/N) ")
             if comm.lower().strip() in ["y", "ye", "yes"]:
                 comments.append("#")
@@ -542,6 +550,8 @@ def plot_all():
         pp = ppload("logs/{0}".format(spec.replace(".fits", "")))
         pp = pPXF(spec, velscale, pp)
         pp.plot("logs/{0}".format(spec.replace(".fits", ".png")))
+        # plt.show()
+    return
 
 def run_list(night, specs, start=None):
     """ Run pPXF on a given list of spectra of the same night. """
@@ -578,13 +588,13 @@ def make_sky_fig(skies, loglam, filenames):
     for i, sky in enumerate(skies.T):
         ax.plot(w, sky / np.median(sky), "-", label=filenames[i])
     ax.set_ylim(0,20)
-    plt.legend(loc=0, prop={"size":6})
+    plt.legend(loc=6, prop={"size":6})
     plt.savefig("logs/sky.png")
     return
 
 def run_stellar_templates(velscale):
     """ Run over stellar templates. """
-    temp_dir = os.path.join(home, "stellar_templates")
+    temp_dir = os.path.join(home, "stellar_templates/MILES_FWHM_3.6")
     standards_dir = os.path.join(home, "data/standards")
     table = os.path.join(tables_dir, "lick_standards.txt")
     ids = np.loadtxt(table, usecols=(0,), dtype=str).tolist()
@@ -608,6 +618,9 @@ def run_stellar_templates(velscale):
             wtemp = htemp["CRVAL1"] + htemp["CDELT1"] * \
                             (np.arange(htemp["NAXIS1"]) + 1 - htemp["CRPIX1"])
             os.chdir(cdir)
+            dsigma = np.sqrt((3.7**2 - 3.6**2))/2.335/(wtemp[1]-wtemp[0])
+            template = broad2hydra(wtemp, template, 3.6)
+            raw_input()
             data = pf.getdata(standard)
             w = wavelength_array(standard)
             lamRange1 = np.array([w[0], w[-1]])
@@ -617,13 +630,17 @@ def run_stellar_templates(velscale):
                                                        velscale=velscale)
             temp, logLam2, velscale = util.log_rebin(lamRange2, template,
                                                        velscale=velscale)
+            w = np.exp(logLam1)
+            goodpixels = np.argwhere((w>4700) & (w<6100)).T[0]
             noise = np.ones_like(star)
             dv = (logLam2[0]-logLam1[0])*c
             pp0 = ppxf(temp, star, noise, velscale, [300.,5], plot=False,
-                       moments=2, degree=20, mdegree=-1, vsyst=dv, quiet=True)
+                       moments=2, degree=20, mdegree=-1, vsyst=dv, quiet=True,
+                       goodpixels=goodpixels)
             noise = np.ones_like(noise) * np.nanstd(star - pp0.bestfit)
             pp0 = ppxf(temp, star, noise, velscale, [0.,5], plot=False,
-                       moments=2, degree=20, mdegree=-1, vsyst=dv)
+                       moments=2, degree=20, mdegree=-1, vsyst=dv,
+                       goodpixels=goodpixels)
             pp0.w = np.exp(logLam1)
             pp0.wtemp = np.exp(logLam2)
             pp0.template_linear = [wtemp, template]
@@ -641,6 +658,7 @@ def run_stellar_templates(velscale):
             pp = ppload("logs/{0}".format(standard.replace(".fits", "")))
             pp = pPXF(standard, velscale, pp)
             pp.plot("logs/{0}".format(standard.replace(".fits", ".png")))
+            plt.show()
     return
 
 def flux_calibration_test(velscale):
@@ -667,7 +685,8 @@ def flux_calibration_test(velscale):
     plt.show()
     return
 
-def run_candidates(velscale, filenames=None):
+def run_candidates(velscale, filenames=None, start=None, has_emission=False,
+                   ncomp=1):
     """ Run pPXF over candidates. """
     os.chdir(data_dir)
     log_dir = os.path.join(data_dir, "logs")
@@ -691,8 +710,8 @@ def run_candidates(velscale, filenames=None):
         os.chdir(data_dir)
         # #################################################################
         # # Go to the main routine of fitting
-        run_ppxf(specs, velscale, ncomp=1, has_emission=False, mdegree=-1,
-                 degree=20, plot=True, sky=sky)
+        run_ppxf(specs, velscale, ncomp=ncomp, has_emission=has_emission,
+                 mdegree=-1, degree=20, plot=True, sky=sky, start=start)
     return
 
 def make_table():
@@ -731,6 +750,12 @@ def make_table():
 
 def make_table_standards():
     standards_dir = os.path.join(home, "data/standards")
+    results = []
+    output = os.path.join(standards_dir, "ppfx_results.txt")
+    head = ("{0:<30}{1:<14}{2:<14}{3:<14}{4:<14}{5:<14}{6:<14}{7:<14}"
+             "{8:<14}{9:<14}{10:<14}{11:<14}{12:<14}\n".format("# FILE",
+             "V", "dV", "S", "dS", "h3", "dh3", "h4", "dh4", "chi/DOF",
+             "S/N (/ pixel)", "ADEGREE", "MDEGREE"))
     for night in nights:
         print night
         os.chdir(os.path.join(standards_dir, night))
@@ -739,17 +764,64 @@ def make_table_standards():
             try:
                 pp = ppload("logs/" + spec.replace(".fits", ""))
                 pp = pPXF(spec, velscale, pp)
-                print spec, pp.sol
             except:
                 continue
+            sol = pp.sol if pp.ncomp == 1 else pp.sol[0]
+            error = pp.error if pp.ncomp == 1 else pp.error[0]
+            line = np.zeros((sol.size + error.size,))
+            line[0::2] = sol
+            line[1::2] = error
+            line = np.append(line, [pp.chi2, pp.sn])
+            line = ["{0:12.3f}".format(x) for x in line]
+            line = ["{0:30s}".format(spec)] + line + \
+                   ["{0:12}".format(pp.degree), "{0:12}".format(pp.mdegree)]
+            results.append(" ".join(line))
+    # Append results to outfile
+    with open(output, "w") as f:
+        f.write(head)
+        f.write("\n".join(results))
+    return
+
+def broad2hydra(wave, intens, obsres):
+    """ Convolve spectra to match the Hydra-CTIO resolution.
+
+    ================
+    Input parameters
+    ================
+    wave: array_like
+        Wavelenght 1-D array in Angstroms.
+
+    intens: array_like
+        Intensity 1-D array of Intensity, in arbitrary units. The lenght has
+        to be the same as wl.
+
+    obsres: float
+        Value of the observed resolution Full Width at Half Maximum (FWHM) in
+        Angstroms.
+
+    =================
+    Output parameters
+    =================
+    array_like
+        The convolved intensity 1-D array.
+
+    """
+    coeffs = np.array([1.84892311e-16, -4.32973804e-12, 3.94864261e-08,
+                     -1.73552121e-04, 3.61151772e-01, -2.70743632e+02])
+    poly = np.poly1d(coeffs)
+    sigmas = np.sqrt(poly(wave)**2 - obsres**2) / 2.3548 / (wave[1] - wave[0])
+    intens2D = np.diag(intens)
+    for i in range(len(sigmas)):
+        intens2D[i] = gaussian_filter1d(intens2D[i], sigmas[i],
+                      mode="constant", cval=0.0)
+    return intens2D.sum(axis=0)
+
 if __name__ == '__main__':
-    pass
-    # run_stellar_templates(velscale)
+    run_stellar_templates(velscale)
     # make_table_standards()
     # flux_calibration_test(velscale)
-    # run_list("blanco10n1", ["hcg62_14.fits"])
-    # run_over_all()
-    # run_candidates(velscale, filenames=["hcg62_n0147_blanco10n2.fits"])
+    # run_candidates(velscale, filenames=["hcg62_66_blanco10n2.fits"],
+    #                start=[4700.,50], has_emission=False, ncomp=1)
     # run_not_combined(velscale)
     # plot_all()
     # make_table()
