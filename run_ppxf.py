@@ -57,7 +57,8 @@ def losvd_convolve(spec, losvd, velscale):
     return convolve1d(spec, profile)
  
 def run_ppxf(spectra, velscale, ncomp=None, has_emission=True, mdegree=-1,
-             degree=20, plot=False, sky=None, start=None, moments=None):
+             degree=20, plot=False, sky=None, start=None, moments=None,
+             log_dir=None, w1=4000., w2=7000.):
     """ Run pPXF in a list of spectra"""
     if isinstance(spectra, str):
         spectra = [spectra]
@@ -131,11 +132,11 @@ def run_ppxf(spectra, velscale, ncomp=None, has_emission=True, mdegree=-1,
         ######################################################################
         # Select goodpixels
         w = np.exp(logLam1)
-        goodpixels = np.argwhere((w>4700) & (w<6100)).T[0]
+        goodpixels = np.argwhere((w>w1) & (w<w2)).T[0]
         # First pPXF interaction
         pp0 = ppxf(templates, galaxy, noise, velscale, start,
                    goodpixels=goodpixels, plot=False, moments=moments,
-                   degree=12, mdegree=-1, vsyst=dv, component=components,
+                   degree=degree, mdegree=mdegree, vsyst=dv, component=components,
                    sky=sky)
         rms0 = galaxy[goodpixels] - pp0.bestfit[goodpixels]
         noise0 = 1.4826 * np.median(np.abs(rms0 - np.median(rms0)))
@@ -147,7 +148,7 @@ def run_ppxf(spectra, velscale, ncomp=None, has_emission=True, mdegree=-1,
                   component=components, sky=sky)
         plt.title(spec.replace("_", "-"))
         plt.show(block=False)
-        plt.savefig("logs/{0}".format(spec.replace(".fits", ".png")))
+        plt.savefig("{1}/{0}".format(spec.replace(".fits", ".png"), log_dir))
         ######################################################################
         # Adding other things to the pp object
         pp.template_files = templates_names
@@ -162,14 +163,11 @@ def run_ppxf(spectra, velscale, ncomp=None, has_emission=True, mdegree=-1,
         pp.templates = 0
         ######################################################################
         # Save fit to pickles file to keep session
-        ppsave(pp, "logs/{0}".format(spec.replace(".fits", "")))
-        pp = ppload("logs/{0}".format(spec.replace(".fits", "")))
+        ppsave(pp, "{1}/{0}".format(spec.replace(".fits", ""), log_dir))
+        pp = ppload("{1}/{0}".format(spec.replace(".fits", ""), log_dir))
         ######################################################################
         ppf = pPXF(spec, velscale, pp)
-        logdir = os.path.join(os.getcwd(), "logs")
-        if not os.path.exists(logdir):
-            os.mkdir(logdir)
-        ppf.plot("logs/{0}".format(spec.replace(".fits", ".png")))
+        ppf.plot("{1}/{0}".format(spec.replace(".fits", ".png"), log_dir))
         ######################################################################
         # # Save to output text file
         # if ncomp > 1:
@@ -620,7 +618,6 @@ def run_stellar_templates(velscale):
             os.chdir(cdir)
             dsigma = np.sqrt((3.7**2 - 3.6**2))/2.335/(wtemp[1]-wtemp[0])
             template = broad2hydra(wtemp, template, 3.6)
-            raw_input()
             data = pf.getdata(standard)
             w = wavelength_array(standard)
             lamRange1 = np.array([w[0], w[-1]])
@@ -658,7 +655,7 @@ def run_stellar_templates(velscale):
             pp = ppload("logs/{0}".format(standard.replace(".fits", "")))
             pp = pPXF(standard, velscale, pp)
             pp.plot("logs/{0}".format(standard.replace(".fits", ".png")))
-            plt.show()
+            # plt.show()
     return
 
 def flux_calibration_test(velscale):
@@ -686,10 +683,11 @@ def flux_calibration_test(velscale):
     return
 
 def run_candidates(velscale, filenames=None, start=None, has_emission=False,
-                   ncomp=1):
+                   ncomp=1, log_dir=None, mdegree=-1, degree=20):
     """ Run pPXF over candidates. """
     os.chdir(data_dir)
-    log_dir = os.path.join(data_dir, "logs")
+    if log_dir is None:
+        log_dir = os.path.join(data_dir, "logs")
     if not os.path.exists(log_dir):
         os.mkdir(log_dir)
     if filenames is None:
@@ -711,7 +709,8 @@ def run_candidates(velscale, filenames=None, start=None, has_emission=False,
         # #################################################################
         # # Go to the main routine of fitting
         run_ppxf(specs, velscale, ncomp=ncomp, has_emission=has_emission,
-                 mdegree=-1, degree=20, plot=True, sky=sky, start=start)
+                 mdegree=mdegree, degree=degree, plot=True, sky=sky,
+                 start=start, log_dir=log_dir)
     return
 
 def make_table():
@@ -732,7 +731,7 @@ def make_table():
         sol = pp.sol if pp.ncomp == 1 else pp.sol[0]
         sol[0] += vhelio
         error = pp.error if pp.ncomp == 1 else pp.error[0]
-        cond = error[1] > 300. and pp.sn > 10.
+        cond = error[1] < 300. and pp.sn > 10.
         name = spec if cond else "#{0}".format(spec)
         line = np.zeros((sol.size + error.size,))
         line[0::2] = sol
@@ -817,11 +816,14 @@ def broad2hydra(wave, intens, obsres):
     return intens2D.sum(axis=0)
 
 if __name__ == '__main__':
-    run_stellar_templates(velscale)
+    # run_stellar_templates(velscale)
     # make_table_standards()
     # flux_calibration_test(velscale)
     # run_candidates(velscale, filenames=["hcg62_66_blanco10n2.fits"],
     #                start=[4700.,50], has_emission=False, ncomp=1)
+    logs_ssps = os.path.join(data_dir, "logs_ssps")
+    run_candidates(velscale, start=None, has_emission=False,
+                   ncomp=1, log_dir=logs_ssps, mdegree=15, degree=4)
     # run_not_combined(velscale)
     # plot_all()
     # make_table()
