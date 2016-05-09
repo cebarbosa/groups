@@ -14,7 +14,7 @@ tables_dir = home + "/tables"
 
 
 # Constants
-c = 299792.458 # Speed of light
+c = 299792.458 # Speed of light in km/s
 FWHM_tem = 3.6 # MILES library spectra have a resolution FWHM of 2.54A.
 FWHM_spec = 3.6 # FWHM of data
 

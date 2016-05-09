@@ -35,7 +35,7 @@ if __name__ == "__main__":
     outhome = '/home/kadu/Dropbox/groups/data/reduced'
     dirs = [x for x in os.listdir(home) if
             os.path.isdir(os.path.join(home, x))]
-    spectype = '0'
+    spectype = '1'
     coords = []
     for night in nights:
         wdir = os.path.join(home, night)
@@ -57,10 +57,12 @@ if __name__ == "__main__":
                 name = finfo.split()[4].lower()
                 outspec_name = '%s_%s' % (mspec.image.replace('.fits', ''),
                                           name)
-                log = "{0:25s}{1:15s}{2}".format(outspec_name, night, finfo)
+                obj = pf.getval(mspec.image, "OBJECT").strip().replace(" ", "_")
+                log = "{0:25s}{1:15s}{2} {3}".format(outspec_name, night, finfo, obj)
                 coords.append(log)
                 outspec = os.path.join(outdir, outspec_name)
                 if not os.path.exists(outspec):
+                    continue
                     iraf.scopy(input=spectrum, output=outspec, w1="INDEF",
                                w2="INDEF", apertures=objfibers[i],
                                clobber = 'yes')
@@ -71,7 +73,7 @@ if __name__ == "__main__":
                 pf.writeto(outspec_name + ".fits", data, h, clobber=True)
                 chdir(wdir)
 
-    # coordfile = os.path.join(tables_dir, "coords.dat")
-    # with open(coordfile, "w") as f:
-    #     f.write("\n".join(coords))
-    # print "End"
+    coordfile = os.path.join(tables_dir, "coords.dat")
+    with open(coordfile, "w") as f:
+        f.write("\n".join(coords))
+    print "End"

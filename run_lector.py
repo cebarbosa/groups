@@ -121,82 +121,6 @@ class Vdisp_corr_k04():
                 newlick[i] = lick[i]
         return newlick
 
-def run(nights, specnames):
-    for night, spectrum in zip(nights, specnames):
-        print "Working with object {0}, {1}".format(spectrum, night)
-        os.chdir(os.path.join(data_dir, night))
-        spec = pf.getdata(spectrum)
-        w = wavelength_array(spectrum, axis=1, extension=0)
-        ssps_file = os.path.join(templates_dir, 'miles_FWHM_3.6.fits')
-        ssps = pf.getdata(ssps_file, 0)
-        wssps = np.power(np.e, pf.getdata(ssps_file, 1))
-        pp = ppload("logs/{0}".format(spectrum.replace(".fits", "")))
-        pp = pPXF(spectrum, velscale, pp)
-        ######################################################################
-        # Make best sky interpolation for subtraction
-        sky_interp = interp1d(pp.w, pp.bestsky, kind="linear",
-                              bounds_error=False, fill_value=0.)
-        sky = sky_interp(w)
-        spec -= sky
-        ######################################################################
-        # Make interpolation of polynomial
-        poly = np.interp(wssps, pp.w, pp.poly)
-        ######################################################################
-        # Make the combination
-        ssps_unbroad_v0 = ssps.dot(pp.w_ssps)
-        ssps_broad = losvd_convolve(ssps_unbroad_v0, pp.sol) + poly
-        sol_unb = np.zeros_like(pp.sol)
-        sol_unb[0] = pp.sol[0]
-        sol_unb[1] = 0.1 * velscale
-        ssps_unbroad = losvd_convolve(ssps_unbroad_v0, np.array(sol_unb)) + poly
-        ######################################################################
-        # Correct for emission line if present
-        em = interp1d(pp.w, pp.gas, kind="linear", bounds_error=False,
-                      fill_value=0.)
-        emission = em(w)
-        spec -= emission
-        ######################################################################
-        noise =  np.ones_like(spec) * np.nanstd(pp.galaxy - pp.bestfit)
-        ######################################################################
-        # Broaden to Lick/IDS system
-        spec = lector.broad2lick(w, spec, 3.6, vel=pp.sol[0])
-        ssps_broad = lector.broad2lick(wssps, ssps_broad, 3.6, vel=pp.sol[0])
-        ssps_unbroad = lector.broad2lick(wssps, ssps_unbroad, 3.6, vel=pp.sol[0])
-        # plt.plot(w, spec, "-k")
-        # plt.plot(wssps, ssps_broad , "-r")
-        # plt.plot(wssps, ssps_unbroad , "-b")
-        # plt.show()
-        lick, lickerr = lector.lector(w, spec, noise, bands, vel=pp.sol[0])
-        noise_temp = np.ones_like(wssps) * noise[0]
-        lick_unb, tmp = lector.lector(wssps, ssps_unbroad, noise_temp, bands,
-                                 vel=pp.sol[0])
-        lick_br, tmp = lector.lector(wssps, ssps_broad, noise_temp, bands,
-                     vel=pp.sol[0])
-        ##################################################################
-        # LOSVD correction using best fit templates
-        ##################################################################
-        lickc, lick_cerr = correct_indices(lick, lickerr, lick_unb,
-                                           lick_br)
-    #     print w[0], w[-1]
-    #     print lickc
-    #     raw_input()
-    # #     ################################################################
-    # #     # Convert to string
-    # #     ################################################################
-    #     lick = "".join(["{0:14}".format("{0:.5f}".format(x)) for x in lick])
-    #     lickc = "".join(["{0:14}".format("{0:.5f}".format(x)) for x in lickc])
-    # #     # Append to output
-    #     logfile1 = "logs_sn{0}/lick_{1}_bin{2:04d}_raw.txt".format(targetSN,
-    #                                                            field, bin)
-    #     logfile2 = "logs_sn{0}/lick_{1}_bin{2:04d}_corr.txt".format(targetSN,
-    #                                                             field, bin)
-    #     with open(logfile1, "w") as f:
-    #         f.write("{0:16s}".format(name) + lick + "\n")
-    #     with open(logfile2, "w") as f:
-    #         f.write("{0:16s}".format(name) + lickc + "\n")
-    #     results.append("{0:16s}".format(name) + lick)
-    #     resultsc.append("{0:16s}".format(name) + lickc)
-
 def make_table(fields, targetSN, ltype="corr"):
     """ Gather information of Lick indices of a given target SN in a single
     table. """
@@ -251,6 +175,7 @@ def lick_standards_table():
         l = ["{0:14s}".format(x) for x in l]
         table.append("{0:15s}".format(star) + "".join(l))
     with open(os.path.join(tables_dir, "lick_standards.txt"), "w") as f:
+        f.write(header + "\n")
         f.write("\n".join(table))
 
 def run_standard_stars(velscale, bands):
@@ -276,13 +201,12 @@ def run_standard_stars(velscale, bands):
             lick_star = lick_ref[idx]
             pp = ppload("logs/{0}".format(star.replace(".fits", "")))
             pp = pPXF(star, velscale, pp)
-            wtemp, temp = pp.template_linear
             mpoly = np.interp(pp.wtemp, pp.w, pp.mpoly)
             spec = pf.getdata(star)
             w = wavelength_array(star, axis=1, extension=0)
             best_unbroad_v0 = mpoly * pp.star.dot(pp.w_ssps)
-            best_broad_v0 = losvd_convolve(best_unbroad_v0, pp.sol,
-                                                velscale)
+            best_broad_v0 = losvd_convolve(best_unbroad_v0,
+                                           np.array([0., pp.sol[1]]), velscale)
             ##################################################################
             # Interpolate bestfit templates to obtain linear dispersion
             b0 = interp1d(pp.wtemp, best_unbroad_v0, kind="linear",
@@ -295,16 +219,19 @@ def run_standard_stars(velscale, bands):
             # Broadening to Lick system
             spec = lector.broad2lick(w, spec, res(w), vel=pp.sol[0])
             best_unbroad_v0 = lector.broad2lick(w, best_unbroad_v0,
-                                                3.6, vel=pp.sol[0])
+                                                3.6, vel=0.)
             best_broad_v0 = lector.broad2lick(w, best_broad_v0, 3.6,
-                                              vel=pp.sol[0])
+                                              vel=0.)
+            # plt.plot(w, spec, "-k")
+            # plt.plot(w, best_broad_v0, "-r")
+            # plt.show()
             ##################################################################
             lick, lickerr = lector.lector(w, spec, np.ones_like(w), bands,
                                           vel=pp.sol[0])
             lick_unb, tmp = lector.lector(w, best_unbroad_v0,
-                             np.ones_like(w), bands, vel=pp.sol[0])
+                             np.ones_like(w), bands, vel=0.)
             lick_br, tmp = lector.lector(w, best_broad_v0,
-                             np.ones_like(w), bands, vel=pp.sol[0])
+                             np.ones_like(w), bands, vel=0.)
             lickm = multi_corr(lick, lick_unb, lick_br)
             licka = add_corr(lick, lick_unb, lick_br)
             ref.append(lick_star)
@@ -428,17 +355,102 @@ def test_lector():
     plt.savefig(output)
 
 def hydra_resolution():
+    """ Returns the wavelength-dependent resolution of the Hydra spectrograph.
+    """
     filename = os.path.join(tables_dir, "wave_fwhm_standards.dat")
     wave, fwhm = np.loadtxt(filename).T
     return interp1d(wave, fwhm, kind="linear", bounds_error=False,
                     fill_value="extrapolate")
 
+def run_candidates(velscale, bands):
+    """ Run lector on candidates. """
+    wdir = os.path.join(home, "data/candidates")
+    os.chdir(wdir)
+    specs = sorted([x for x in os.listdir(wdir) if x.endswith(".fits")])
+    obsres = hydra_resolution()
+    # Load templates
+    star_templates = pf.getdata(os.path.join(templates_dir,
+                                             'miles_FWHM_3.7.fits'), 0)
+    logLam2 = pf.getdata(os.path.join(templates_dir, 'miles_FWHM_3.7.fits'), 1)
+    miles = np.loadtxt(os.path.join(templates_dir, 'miles_FWHM_3.7.txt'),
+                       dtype=str).tolist()
+    gas_templates = pf.getdata(os.path.join(templates_dir,
+                                             'emission_FWHM_3.7.fits'), 0)
+    logLam_gas = pf.getdata(os.path.join(templates_dir, 'emission_FWHM_3.7.fits'),
+                            1)
+    gas_files = np.loadtxt(os.path.join(templates_dir, 'emission_FWHM_3.7.txt'),
+                       dtype=str).tolist()
+    for spec in specs:
+        ppfile = "logs/{0}".format(spec.replace(".fits", ""))
+        if not os.path.exists(ppfile + ".pkl"):
+            print "Skiping spectrum: ", spec
+            continue
+        pp = ppload("logs/{0}".format(spec.replace(".fits", "")))
+        pp = pPXF(spec, velscale, pp)
+        galaxy = pf.getdata(spec)
+        w = wavelength_array(spec, axis=1, extension=0)
+        plt.plot(w,galaxy, "-k")
+        ylim = plt.ylim()
+        plt.cla()
+        best_unbroad_v0 = pp.mpoly * (pp.star.dot(pp.w_ssps))
+        best_unbroad = losvd_convolve(best_unbroad_v0, np.array([pp.sol[0], velscale/10.]),
+                                            velscale)
+        best_broad = losvd_convolve(best_unbroad_v0, pp.sol,
+                                            velscale)
+        ##################################################################
+        # Interpolate bestfit templates to obtain linear dispersion
+        b0 = interp1d(pp.w, best_unbroad, kind="linear",
+                      fill_value="extrapolate", bounds_error=False)
+        b1 = interp1d(pp.w, best_broad, kind="linear",
+                      fill_value="extrapolate", bounds_error=False)
+        sky = interp1d(pp.w, pp.bestsky, kind="linear",
+                      fill_value="extrapolate", bounds_error=False)
+        poly = interp1d(pp.w, pp.bestsky, kind="linear",
+                      fill_value="extrapolate", bounds_error=False)
+        best_unbroad = b0(w)
+        best_broad = b1(w)
+        #################################################################
+        # plt.plot(w, best_unbroad, "-b")
+        # plt.plot(w, best_broad, "-r")
+        # plt.plot(w, galaxy - sky_linear, "-k")
+        # plt.ylim(ylim)
+        # plt.show()
+        # Broadening to Lick system
+        spec = lector.broad2lick(w, galaxy - sky(w), obsres(w), vel=pp.sol[0])
+        best_unbroad = lector.broad2lick(w, best_unbroad + poly(w),
+                                            3.6, vel=pp.sol[0])
+        best_broad = lector.broad2lick(w, best_broad + poly(w), 3.6,
+                                          vel=pp.sol[0])
+        ##################################################################
+        plt.plot(w, best_unbroad + poly(w), "-b")
+        plt.plot(w, best_broad + poly(w), "-r")
+        plt.plot(w, galaxy - sky(w), "-k")
+        plt.ylim(ylim)
+        lick, lickerr = lector.lector(w, spec, np.ones_like(w), bands,
+                                      vel=pp.sol[0])
+        lick_unb, tmp = lector.lector(w, best_unbroad_v0,
+                         np.ones_like(w), bands, vel=pp.sol[0])
+        lick_br, tmp = lector.lector(w, best_broad,
+                         np.ones_like(w), bands, vel=pp.sol[0])
+        print lick
+        print lick_br -lick_unb
+        plt.show()
+        raw_input()
+#         ref.append(lick_star)
+#         obsm.append(lickm)
+#         obsa.append(licka)
+# with open(os.path.join(tables_dir, "stars_lick_val_corr.txt"), "w") as f:
+#     np.savetxt(f, np.array(ref))
+# with open(os.path.join(tables_dir, "stars_lick_obs_mcorr.txt"), "w") as f:
+#     np.savetxt(f, np.array(obsm))
+# with open(os.path.join(tables_dir, "stars_lick_obs_acorr.txt"), "w") as f:
+#     np.savetxt(f, np.array(obsa))
+# return
+
 if __name__ == "__main__":
     # test_lector()
     # run_standard_stars(velscale,
     #                    os.path.join(tables_dir, "bands_matching_standards.txt"))
-    plot_standard()
+    # plot_standard()
     # lick_standards_table()
-    # specs, nights = np.loadtxt(os.path.join(tables_dir, "spec_location.txt"),
-    #                            dtype=str, usecols=(0,1)).T
-    # run(nights[3:], specs[3:])
+    run_candidates(velscale, os.path.join(tables_dir, "bands.txt"))
