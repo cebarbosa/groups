@@ -54,6 +54,7 @@ def losvd_convolve(spec, losvd, velscale):
             poly += pars[4]/np.sqrt(60)*(w*(w2*(4*w2-20)+15)) \
                   + pars[5]/np.sqrt(720)*(w2*(w2*(8*w2-60)+90)-15)
         profile *= poly
+        profile = profile / profile.sum()
     return convolve1d(spec, profile)
  
 def run_ppxf(spectra, velscale, ncomp=None, has_emission=True, mdegree=-1,
@@ -122,7 +123,7 @@ def run_ppxf(spectra, velscale, ncomp=None, has_emission=True, mdegree=-1,
         dv = (logLam2[0]-logLam1[0])*c
         ######################################################################
         # Set first guess from setup files
-        if start == None:
+        if start is None:
             start = [v0s[spec.split("_")[0]], 50]
             goodPixels = None
         ######################################################################
@@ -822,8 +823,9 @@ if __name__ == '__main__':
     # run_candidates(velscale, filenames=["hcg62_66_blanco10n2.fits"],
     #                start=[4700.,50], has_emission=False, ncomp=1)
     logs_ssps = os.path.join(data_dir, "logs_ssps")
-    run_candidates(velscale, start=None, has_emission=False,
-                   ncomp=1, log_dir=logs_ssps, mdegree=15, degree=4)
+    run_candidates(velscale, start=np.array([3914., 16.]), has_emission=False,
+                   ncomp=1, log_dir=logs_ssps, mdegree=15, degree=4,
+                   filenames=["ngc7619_166_blanco11bn1.fits"])
     # run_not_combined(velscale)
     # plot_all()
     # make_table()

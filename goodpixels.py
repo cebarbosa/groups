@@ -27,7 +27,7 @@ def set_coords(spec):
     for x in coords:
         ax.axvline(x, ls="--", c="r")
     plt.pause(0.001)
-    plt.show(   )
+    plt.show()
     accept = raw_input("Accept x0={0[0]}, x1={0[1]}? (Y/n)".format(coords))
     if accept.lower().strip() in ["", "y", "ye", "yes"]:
         return coords
