@@ -98,8 +98,10 @@ def plot():
     ax.plot(ws, ms, "sr", mec="r", label="Median Velocity\nDispersion", ms=8)
     obsres = np.array(ws) * np.array(ms) / c * sig2fwhm
     res = np.sqrt(obsres**2 + 2.5**2)
+    resolution = ws / res
+    print np.median(resolution)
+    print resolution.min(), resolution.max()
     z = np.polyfit(ws, res, 5)
-    print z
     p = np.poly1d(z)
     w = np.linspace(4000., 6500, 2500)
     # ax.plot(w, p(w), "-r", label="Best fit")
