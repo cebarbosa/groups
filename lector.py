@@ -10,8 +10,6 @@ Last update: August 6, 2013
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
 from scipy.interpolate import interp1d
 from scipy.integrate import romb
 from scipy.ndimage.filters import gaussian_filter1d
