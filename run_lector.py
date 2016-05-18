@@ -300,6 +300,7 @@ def test_lector():
              usecols=(2,3,4,5,6,7,8,9,14,15,16,17,18,24,25,26,
                       27,28,29,30,31,32,33,34,35))
     obs = []
+    from lick import Lick
     for i, star in enumerate(stars):
         print star + ".fits"
         spec = pf.getdata(star + ".fits")
@@ -307,7 +308,8 @@ def test_lector():
         w = h["CRVAL1"] + h["CDELT1"] * \
                             (np.arange(h["NAXIS1"]) + 1 - h["CRPIX1"])
         lick, tmp = lector.lector(w, spec, np.ones_like(w), bands, interp_kind="linear")
-        obs.append(lick)
+        ll = Lick(w, spec, np.loadtxt(bands, usecols=(2,3,4,5,6,7,)))
+        obs.append(ll.classic)
     obs = np.array(obs)
     fig = plt.figure(1, figsize=(20,12))
     gs = GridSpec(5,5)
@@ -359,6 +361,8 @@ def run_candidates(velscale, bands):
         print ppfile
         pp = ppload("logs_ssps/{0}".format(spec.replace(".fits", "")))
         pp = pPXF(spec, velscale, pp)
+        print pp.sol
+        raw_input()
         galaxy = pf.getdata(spec)
         w = wavelength_array(spec, axis=1, extension=0)
         if pp.ncomp > 1:
@@ -541,10 +545,10 @@ def run_candidates_mc(velscale, bands, nsim=50):
 
 
 if __name__ == "__main__":
-    # test_lector()
+    test_lector()
     # run_standard_stars(velscale,
     #                    os.path.join(tables_dir, "bands_matching_standards.txt"))
     # plot_standard()
     # lick_standards_table()
-    run_candidates(velscale, os.path.join(tables_dir, "bands.txt"))
+    # run_candidates(velscale, os.path.join(tables_dir, "bands.txt"))
     # run_candidates_mc(velscale, os.path.join(tables_dir, "bands.txt"))
