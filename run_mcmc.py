@@ -248,7 +248,7 @@ def run_analysis(chain=1):
     #                            "mcmc_results_{0}.pdf".format(modelname)))
     # plt.figure(1, figsize=(9,6.5))
     # plt.minorticks_on()
-    results = []
+    outtable = []
     for i, direc in enumerate(dirs):
         print "{0} / {1}".format(i+1, len(dirs))
         obj = "_".join(direc.split("_")[1:3])
@@ -266,11 +266,11 @@ def run_analysis(chain=1):
         Age = Dist(trage, ssp.lims[0])
         Metal = Dist(trmetal, ssp.lims[1])
         Alpha = Dist(tralpha, ssp.lims[2])
-        results = [spec]
+        results = []
         for d in [Age, Metal, Alpha]:
             results += [d.best.MAPP, d.best.lerr, d.best.uerr]
-        print results
-        raw_input()
+        results = [spec] + ["{0:.5g}".format(x) for x in results]
+        outtable.append(results)
         # results.append[[Age.best.mean, Age.lerr, Age.uerr,
         #                 Metal.best.mean, Metal.lerr, Metal.uerr,
         #                 Alpha.best.mean, Alpha.lerr, Alpha.uerr]]
@@ -283,6 +283,10 @@ def run_analysis(chain=1):
     #     plt.show()
         # plt.clf()
     # pp.close()
+    outtable = np.array(outtable)
+    with open("populations_chain{0}.txt".format(chain), "w") as f:
+        f.write("# Spec Age LERR UERR [Z/H] LERR UERR [alpha/Fe] LERR UERR\n")
+        np.savetxt(f, outtable, fmt="%s")
 
 def plot_results(dists):
     for i, d in enumerate(dists):
