@@ -11,6 +11,7 @@ home = "/home/kadu/Dropbox/groups"
 templates_dir = home + "/MILES"
 data_dir = home + "/data/candidates"
 tables_dir = home + "/tables"
+plots_dir = home + "/plots"
 
 
 # Constants
@@ -35,3 +36,6 @@ decc = ["-15d40m32s", "-19d38m57s", "-09d12m01s", "-31d58m00s", "+03d17m04s",
 # Defining observing runs
 nights = ["blanco10n1", "blanco10n2", "blanco11an1", "blanco11an2",
           "blanco11bn1", "blanco11bn2", "blanco11bn3"]
+obsrun = {"blanco10n1" : 1, "blanco10n2" : 2, "blanco11an1" : 3,
+          "blanco11an2" : 4, "blanco11bn1" : 5, "blanco11bn2" : 6,
+          "blanco11bn3" : 7 }
