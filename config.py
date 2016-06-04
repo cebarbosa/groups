@@ -26,6 +26,14 @@ velscale = 20. # km/s
 v0s = dict([("hcg22", 2698.), ("hcg62", 4413.), ("hcg90", 2638.),
             ("hcg42", 3987.), ("ngc193", 4400.), ("ngc7619", 3439.)])
 
+H_0 = 70.5
+
+# Galactocentric distances in Mpc
+distances = dict([("hcg22", 37.5), ("hcg62", 61.1), ("hcg90", 37.9),
+            ("hcg42", 53.7), ("ngc193", 63.8), ("ngc7619", 50.9)])
+disterr = dict([("hcg22", 0.7), ("hcg62", 1.3), ("hcg90", 0.7),
+            ("hcg42", 1.), ("ngc193", 1.2), ("ngc7619", 0.9)])
+
 # Defining systems
 groups = ["hcg22", "hcg42", "hcg62", "hcg90", "ngc193", "ngc7619"]
 rac = ["03h03m31.3s", "10h00m21.8s", "12h53m05.5s", "22h02m05.6s",

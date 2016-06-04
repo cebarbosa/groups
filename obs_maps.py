@@ -18,6 +18,7 @@ import astropy.units as units
 import matplotlib.pyplot as plt
 from matplotlib.collections import PatchCollection
 import pywcs
+from scipy.spatial import ConvexHull
 
 from config import *
 from run_ppxf import wavelength_array
@@ -157,6 +158,26 @@ def make_map(group):
     # plt.close()
     return
 
+def calc_rsamp():
+    """ Calculate the sampled area"""
+    obs, cand = get_observational_data()
+    for i, group in enumerate(groups):
+        print group,
+        for j, data in enumerate([obs, cand]):
+            if i==0 and j==1:
+                continue
+            idx = np.where(group == data[1])
+            ra0 = coord.Angle(rac[i], unit=units.hourangle)
+            dec0 = coord.Angle(decc[i], unit=units.degree)
+            xdeg, ydeg = data[2][idx] - ra0.degree, data[3][idx] - dec0.degree
+            D = distances[group] * units.Mpc
+            X = D * np.tan(np.deg2rad(xdeg)) * units.kpc**-1
+            Y = D * np.tan(np.deg2rad(ydeg)) * units.kpc**-1
+            hull = ConvexHull(np.column_stack((X, Y)))
+            print hull.area,
+        print
+    return
+
 if __name__ == "__main__":
     make_table_coordinates(redo=False)
     # make_map("hcg22")
@@ -164,5 +185,5 @@ if __name__ == "__main__":
     # make_map("hcg62")
     # make_map("hcg90")
     # make_map("ngc7619")
-    make_map("ngc193")
-
+    # make_map("ngc193")
+    calc_rsamp()
