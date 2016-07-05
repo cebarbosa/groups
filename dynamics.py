@@ -184,25 +184,31 @@ def plot_zm98():
     err =  np.loadtxt(table, usecols=(1,3,5,7,9,11)).T
     zmfields = ["HRV", "sigma", "rp", "rh", "Mvir", "tc/tH"]
     zmferrs = ['e_HRV', 'e_sigma', None, None, None, None]
-    lims = [[1000, 8000], [0, 500], [0.7, 1.1], [0.5,  0.9], [0e14, 2.5e14],
+    lims = [[1000, 8000], [0, 500], [0.6, 1.21], [0.4,  0.9], [0, 2.5],
             [0, 0.1]]
-    div = [1., 1., 0.65, 0.65, 0.65, 1.]
-    labels = ["$\mathbf{v}$ (km/s)", "$\mathbf{\sigma_v}$ (km/s)",
-              "$\mathbf{R_p}$ (Mpc)", "$\mathbf{R_h}$ (Mpc)",
-              "$\mathbf{M_v}$ (M$_\odot$)", "$\mathbf{t_c/t_H}$"]
+    div = [1., 1., 0.678, 0.678, 0.678, 1.]
+    labels = ["$v$ (km/s)", "$\sigma_v$ (km/s)",
+              "$R_p$ (Mpc)", "$R_h$ (Mpc)",
+              "$M_v$ ($10^{14}$M$_\odot$)", "$t_c/t_H$"]
+    fig = plt.figure(1, figsize=(9,5.6))
+    scale = [1., 1., 1., 1., 1e-14, 1.]
     for i in range(6):
         ax = plt.subplot(2,3,i+1)
         ax.minorticks_on()
         err2 = None if zmferrs[i] is None else table2[zmferrs[i]]/div[i]
-        ax.errorbar(table2[zmfields[i]]/div[i], data[i],
-                    yerr=err[i], xerr=err2, ecolor="0.8", fmt="o", color="r",
+        ax.errorbar(table2[zmfields[i]]/div[i]*scale[i], data[i] * scale[i],
+                    yerr=err[i] * scale[i], xerr=err2, ecolor="0.8", fmt="o", color="r",
                     mec="r", ms=8)
         ax.set_xlim(lims[i])
         ax.set_ylim(lims[i])
         plt.plot(lims[i], lims[i], "--k")
-        ax.set_xlabel(labels[i] + " - this work")
-        ax.set_ylabel(labels[i] + " - ZM98")
-    plt.show()
+        ax.set_ylabel(labels[i] + " - this work")
+        ax.set_xlabel(labels[i] + " - ZM98")
+        ax.locator_params(nbins=5)
+    plt.subplots_adjust(left=0.09, right=0.96, top=0.97, hspace=0.3,
+                        wspace=0.35)
+    plt.savefig(os.path.join(plots_dir, "zmcomp.png"))
+    return
 
 def make_latex():
     intables = [os.path.join(tables_dir, "zm98_biweight.txt"),
@@ -245,6 +251,6 @@ def dynamics(group, ra, dec, v, verr, D):
 if __name__ == "__main__":
     G = constants.G.to("(km2 kpc)/(M_sun s2)")
     # calc_zm98()
-    # plot_zm98()
+    plot_zm98()
     # calc_our()
-    make_latex()
+    # make_latex()
