@@ -26,7 +26,7 @@ velscale = 20. # km/s
 v0s = dict([("hcg22", 2698.), ("hcg62", 4413.), ("hcg90", 2638.),
             ("hcg42", 3987.), ("ngc193", 4400.), ("ngc7619", 3439.)])
 
-H_0 = 70.5
+H_0 = 67.8
 
 # Galactocentric distances in Mpc
 distances = dict([("hcg22", 37.5), ("hcg62", 61.1), ("hcg90", 37.9),

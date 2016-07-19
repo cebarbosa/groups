@@ -361,8 +361,6 @@ def run_candidates(velscale, bands):
         print ppfile
         pp = ppload("logs_ssps/{0}".format(spec.replace(".fits", "")))
         pp = pPXF(spec, velscale, pp)
-        print pp.sol
-        raw_input()
         galaxy = pf.getdata(spec)
         w = wavelength_array(spec, axis=1, extension=0)
         if pp.ncomp > 1:

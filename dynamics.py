@@ -124,7 +124,7 @@ def calc_zm98():
               x in table2["Group"]]
     results = []
     for j, group in enumerate(sample):
-        print group
+        print group,
         idx = np.array([i for i,x in enumerate(objs) if x.startswith(group)])
         zmdata = []
         for d in data:
@@ -135,11 +135,13 @@ def calc_zm98():
         N = len(zmgals[0])
         ra = zmgals[1]
         dec = zmgals[2]
+        print biweight_clipped(zmgals[3]), np.std(zmgals[3])
+        continue
         line = dynamics(group, ra, dec, zmgals[3], zmgals[4], D)
         results.append(line)
     results = np.array(results)
-    with open(os.path.join(tables_dir, "zm98_biweight.txt"), "w") as f:
-        np.savetxt(f, results, fmt="%s")
+    # with open(os.path.join(tables_dir, "zm98_biweight.txt"), "w") as f:
+    #     np.savetxt(f, results, fmt="%s")
     return
 
 def calc_our():
@@ -184,20 +186,22 @@ def plot_zm98():
     err =  np.loadtxt(table, usecols=(1,3,5,7,9,11)).T
     zmfields = ["HRV", "sigma", "rp", "rh", "Mvir", "tc/tH"]
     zmferrs = ['e_HRV', 'e_sigma', None, None, None, None]
-    lims = [[1000, 8000], [0, 500], [0.6, 1.21], [0.4,  0.9], [0, 2.5],
+    lims = [[1000, 8000], [0, 500], [0.7, 1.2], [0.4,  0.9], [0, 2.5],
             [0, 0.1]]
-    div = [1., 1., 0.678, 0.678, 0.678, 1.]
+    div = [1., 1., 0.65 , 0.65, 0.65, 1.]
     labels = ["$v$ (km/s)", "$\sigma_v$ (km/s)",
               "$R_p$ (Mpc)", "$R_h$ (Mpc)",
               "$M_v$ ($10^{14}$M$_\odot$)", "$t_c/t_H$"]
     fig = plt.figure(1, figsize=(9,5.6))
     scale = [1., 1., 1., 1., 1e-14, 1.]
+    panels = ["A", "B", "C", "D", "E", "F"]
     for i in range(6):
         ax = plt.subplot(2,3,i+1)
         ax.minorticks_on()
         err2 = None if zmferrs[i] is None else table2[zmferrs[i]]/div[i]
         ax.errorbar(table2[zmfields[i]]/div[i]*scale[i], data[i] * scale[i],
-                    yerr=err[i] * scale[i], xerr=err2, ecolor="0.8", fmt="o", color="r",
+                    yerr=err[i] * scale[i], xerr=err2, ecolor="0.8",
+                    fmt="o", color="r",
                     mec="r", ms=8)
         ax.set_xlim(lims[i])
         ax.set_ylim(lims[i])
@@ -205,6 +209,7 @@ def plot_zm98():
         ax.set_ylabel(labels[i] + " - this work")
         ax.set_xlabel(labels[i] + " - ZM98")
         ax.locator_params(nbins=5)
+        ax.legend([], [], title="({0})".format(panels[i]), loc=2, frameon=False)
     plt.subplots_adjust(left=0.09, right=0.96, top=0.97, hspace=0.3,
                         wspace=0.35)
     plt.savefig(os.path.join(plots_dir, "zmcomp.png"))
@@ -229,7 +234,7 @@ def make_latex():
 
 def dynamics(group, ra, dec, v, verr, D):
     sigma = biweight_clipped(v) * units.km / units.s
-    sigmaerr = bootstrap(v, verr,biweight_clipped) * units.km / units.s
+    sigmaerr = bootstrap(v, verr, biweight_clipped) * units.km / units.s
     N = len(ra)
     V = np.mean(v) * units.km / units.s
     Verr = bootstrap(v, verr, np.mean) * units.km / units.s
