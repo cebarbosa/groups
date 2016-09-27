@@ -332,7 +332,7 @@ class pPXF():
         # Using robust method to calculate noise using median deviation
         self.noise = np.nanstd(self.res[idx])
         self.signal = np.nanstd(self.galaxy[self.goodpixels][idx])
-        self.sn = self.signal / self.noise / np.sqrt(self.dw)
+        self.sn = self.signal / self.noise
         return
 
     def mc_errors(self, nsim=200):
@@ -722,9 +722,10 @@ def run_candidates(velscale, filenames=None, start=None, has_emission=False,
 def make_table():
     """ Make table with results. """
     head = ("{0:<30}{1:<14}{2:<14}{3:<14}{4:<14}{5:<14}{6:<14}{7:<14}"
-             "{8:<14}{9:<14}{10:<14}{11:<14}{12:<14}\n".format("# FILE",
+             "{8:<14}{9:<14}{10:<14}{11:<14}{12:<14}{13:<14}\n".format("# "
+                                                                       "FILE",
              "V", "dV", "S", "dS", "h3", "dh3", "h4", "dh4", "chi/DOF",
-             "S/N (/ pixel)", "ADEGREE", "MDEGREE"))
+             "S/N (/ pixel)", "ADEGREE", "MDEGREE", "EMISSION"))
     os.chdir(data_dir)
     specs = sorted([x for x in os.listdir(".") if x.endswith(".fits")])
     results = []
@@ -746,9 +747,9 @@ def make_table():
         line = ["{0:12.3f}".format(x) for x in line]
         line = ["{0:30s}".format(name)] + line + \
                ["{0:12}".format(pp.degree), "{0:12}".format(pp.mdegree)]
-        print pp.sol, pp.error
+        hasem = "         yes" if pp.has_emission else "          no"
+        line += [hasem]
         print line
-        raw_input()
         results.append("".join(line))
     # Append results to outfile
     with open(output, "w") as f:
@@ -828,12 +829,13 @@ if __name__ == '__main__':
     # run_stellar_templates(velscale)
     # make_table_standards()
     # flux_calibration_test(velscale)
-    # run_candidates(velscale, filenames=["hcg62_66_blanco10n2.fits"],
-    #                start=[4700.,50], has_emission=False, ncomp=1)
+    # run_candidates(velscale, filenames=[
+    #     "hcg193_119_blanco11bn3.fits"],
+    #                start=[4600.,50], has_emission=False, ncomp=1)
     # logs_ssps = os.path.join(data_dir, "logs_ssps")
     # run_candidates(velscale, start=np.array([3914., 16.]), has_emission=False,
     #                ncomp=1, log_dir=logs_ssps, mdegree=15, degree=4,
     #                filenames=["ngc7619_166_blanco11bn1.fits"])
     # run_not_combined(velscale)
-    plot_all()
-    # make_table()
+    # plot_all()
+    make_table()
