@@ -106,14 +106,14 @@ def plot():
     w = np.linspace(4000., 6500, 2500)
     # ax.plot(w, p(w), "-r", label="Best fit")
     ax.set_ylim(0,220)
-    ax.set_xlabel("Wavelength (\AA)")
-    ax.set_ylabel("$\sigma$ (km/s)", color="r")
+    ax.set_xlabel("Wavelength (Angstrom)")
+    ax.set_ylabel("$\sigma_*$ (km/s)", color="r")
     plt.legend(loc=0, frameon=False,prop={'size':16})
     ax2 = ax.twinx()
     ax2.minorticks_on()
     ax2.plot(ws, res, "ob", ms=8, mec="none", label="Hydra-CTIO\n FWHM")
     ax2.plot(w,p(w),"-b", label="Polynomial Fit")
-    ax2.set_ylabel("FWHM (\AA)", color="b")
+    ax2.set_ylabel(r"$\Delta \lambda_{\rm Hydra}$ (Angstrom)", color="b")
     for tl in ax2.get_yticklabels():
         tl.set_color('b')
     for tl in ax.get_yticklabels():
