@@ -307,7 +307,8 @@ def test_lector():
         h = pf.getheader(star + ".fits")
         w = h["CRVAL1"] + h["CDELT1"] * \
                             (np.arange(h["NAXIS1"]) + 1 - h["CRPIX1"])
-        lick, tmp = lector.lector(w, spec, np.ones_like(w), bands, interp_kind="linear")
+        lick, tmp = lector.lector(w, spec, np.ones_like(w), bands,
+                                  interp_kind="linear")
         ll = Lick(w, spec, np.loadtxt(bands, usecols=(2,3,4,5,6,7,)))
         obs.append(ll.classic)
     obs = np.array(obs)
@@ -319,22 +320,23 @@ def test_lector():
     ref = ref.T
     names = np.loadtxt(bands, usecols=(0,), dtype=str)
     units = np.loadtxt(bands, usecols=(9,), dtype=str).tolist()
-    units = [x.replace("Ang", "\AA") for x in units]
+    # units = [x.replace("Ang", "\AA") for x in units]
     for i in range(25):
         ax = plt.subplot(gs[i])
         plt.locator_params(axis="x", nbins=6)
         ax.minorticks_on()
-        ax.plot(obs[i], obs[i] - ref[i], "o", color="0.5")
+        ax.plot(obs[i], (obs[i] - ref[i]) / ref[i], "o", color="0.5")
         ax.axhline(y=0, ls="--", c="k")
         lab = "median $= {0:.3f}$".format(
             np.nanmedian(obs[i] - ref[i])).replace("-0.00", "0.00")
         ax.axhline(y=np.nanmedian(obs[i] - ref[i]), ls="--", c="r", label=lab)
         ax.set_xlabel("{0} ({1})".format(names[i].replace("_", " "), units[i]))
         ax.legend(loc=1,prop={'size':15})
-        ax.set_ylim(-0.05, 0.05)
+        ax.set_ylim(-0.01, 0.01)
     fig.text(0.02, 0.5, 'I$_{{\\rm pylector}}$ - I$_{{\\rm lector}}$', va='center',
              rotation='vertical', size=40)
     output = os.path.join(home, "plots/test_lector.png")
+    plt.show()
     plt.savefig(output)
 
 def hydra_resolution():
