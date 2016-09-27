@@ -74,7 +74,7 @@ def merge_tables():
     ###########################################################################
     # Making headers
     header = ["File", 'V', 'dV', 'S', 'dS', 'h3', 'dh3', 'h4', 'dh4',
-              'chi/DOF', 'S/N/Angstrom', 'ADEGREE', 'MDEGREE']
+              'chi/DOF', 'S/N/Angstrom', 'ADEGREE', 'MDEGREE', "EMISSION"]
     indices = np.loadtxt(os.path.join(tables_dir, "bands.txt"), usecols=(0,),
                          dtype=str)
     err = np.array(25 * ["err    "], dtype=str)
@@ -144,7 +144,9 @@ def make_latex():
         out = np.column_stack((out, make_str_err(kdata, kerr)))
     sn = np.loadtxt(table, usecols=(10,))
     sn = ["{0:.1f}".format(x) for x in sn]
-    out = np.column_stack((out, sn))
+    emission = np.loadtxt(table, usecols=(13,), dtype=str)
+    emission =  ["{0:<5}".format(x) for x in emission]
+    out = np.column_stack((out, sn, emission))
     out = [" & ".join(x) + "\\\\" for x in out]
     with open("groups_kinematics.tex", "w") as f:
         f.write("\n".join(out))
@@ -180,7 +182,7 @@ def make_str_err(vals, errs):
     #                                             uerr, ndig, prop[i])
     # stpop.append(valstr)
 
-def internal_check(verbose=False):
+def internal_check():
     table = os.path.join(data_dir, "results.tab")
     specs = np.loadtxt(table, usecols=(0,), dtype=str)
     data = np.loadtxt(table, usecols=(1,3))
@@ -190,17 +192,27 @@ def internal_check(verbose=False):
     data[:,0] -= vgroups
     galaxies = np.unique(objs)
     repdata, reperr = [], []
+    ids = []
     for gal in galaxies:
         idx = np.where(objs == gal)[0]
         if len(idx) > 1:
-            if verbose:
-                print gal, data[idx].T.ravel()
+            ids += [gal]
+            d =  data[idx].T.ravel()
+            e = err[idx].T.ravel()
             if type(repdata) is list:
-                repdata = np.array(data[idx].T.ravel())
-                reperr = np.array(err[idx].T.ravel())
+                repdata = np.array(d)
+                reperr = np.array(e)
             else:
-                repdata = np.column_stack((repdata, data[idx].T.ravel()))
-                reperr = np.column_stack((reperr, err[idx].T.ravel()))
+                repdata = np.column_stack((repdata, d))
+                reperr = np.column_stack((reperr, e))
+    np.set_printoptions(suppress=True)
+    difv = np.abs((repdata[0] - repdata[1]) /  np.sqrt(reperr[0]**2 + reperr[
+        1]**2))
+    difsig = np.abs((repdata[2] - repdata[3]) / np.sqrt(reperr[2]**2 + reperr[
+        3]**2))
+    ids = np.array(ids)
+    print ids[difv > 3], np.abs(repdata[0] - repdata[1])[difv > 3]
+    print ids[difsig > 3], np.abs(repdata[2] - repdata[3])[difsig > 3]
     fig = plt.figure(figsize=(8,3.5))
     xlims = [[-1000, 1000], [0,350]]
     ylims=[[-50,50],[-80,80]]
@@ -267,10 +279,10 @@ def make_unique():
     data = np.loadtxt(table, dtype=str)
     data[:,0] = specs
     # Defining index type: 0 = strings, 1 = mean, 2 = error
-    i0 = np.array([0,72,73])
-    i1 = np.hstack(([1,3,5,7,9,10,11,12], np.arange(13,62,2)))
-    i2 = np.hstack(([2,4,6,8,14,16], np.arange(14,63,2)))
-    i3 = np.arange(63,72)
+    i0 = np.array([0,13,73,74])
+    i1 = np.hstack(([1,3,5,7,9,10,11,12], np.arange(14,63,2)))
+    i2 = np.hstack(([2,4,6,8,14,16], np.arange(15,64,2)))
+    i3 = np.arange(64,73)
     new = []
     unique = np.unique(specs)
     results = np.empty((len(unique), len(data[0])), dtype="S32")
@@ -298,8 +310,8 @@ if __name__ == "__main__":
     merge_tables()
     comment_table()
     make_latex()
-    make_unique()
+    # make_unique()
     # print_stats()
     # sigma_mgb()
-    # internal_check()
+    internal_check()
     # mass_pop()
