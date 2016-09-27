@@ -29,7 +29,7 @@ def download_images(data):
         args = [d["specs"]]
         args += d["RA"].split(":")
         args += d["DEC"].split(":")
-        args += ["5", "5"]
+        args += ["2", "2"]
         lines.append(" ".join(args))
     with open("input.lis", "w") as f:
         f.write("\n".join(lines))
@@ -40,8 +40,8 @@ def download_images(data):
 
 def plot():
     table = os.path.join(data_dir, "results.tab")
-    data = np.loadtxt(table, usecols=(0,72,73,1,2,3,4,63,64,65,66,67,68,69,70,
-                                      71,72), dtype=str)
+    data = np.loadtxt(table, usecols=(0,73,74,1,2,3,4,64,65,66,67,68,69,70,71,
+                                      72,73), dtype=str)
     specs = data[:,0]
     ras = coord.Angle(data[:,1], unit=units.hour)
     decs = coord.Angle(data[:,2], unit=units.degree)
@@ -61,10 +61,10 @@ def plot():
         decim = wavelength_array(imgfile, axis=2)
         wcs = pywcs.WCS(pf.getheader(imgfile))
         xsize = np.abs(raim[-1] - raim[0]) * 60
-        fig = plt.figure(1, figsize=(5,4.6))
+        fig = plt.figure(1, figsize=(5.5,5))
         ax = plt.subplot(111)
         ax.minorticks_on()
-        plt.imshow(img, origin="bottom", cmap="hot",
+        plt.imshow(img, origin="bottom", cmap="cubehelix",
                    extent=[raim[0], raim[-1], decim[0], decim[-1]],
                    aspect="equal")
         # labels = [str(float(x)/15) for x in ax.get_xticks().tolist()]
@@ -77,10 +77,10 @@ def plot():
         ylim = ax.get_ylim()
         plt.ylabel("DEC J2000 (degree)")
         xy = lambda r, phi: (r * np.cos(phi), r * np.sin(phi))
-        xcirc, ycirc = xy(2./60 / 2, np.arange(0,6.28,0.1))
-        plt.plot(ra.degree + xcirc, dec.degree + ycirc, "--y")
-        plt.xlim(raim[0], raim[-1])
-        plt.ylim(decim[0], decim[-1])
+        xcirc, ycirc = xy(2./60 / 2/60, np.arange(0,6.28,0.1))
+        plt.plot(raim.mean()+ xcirc, decim.mean() + ycirc, "-y")
+        plt.xlim(raim[0] - 2./60, raim[-1] + 2./60)
+        plt.ylim(decim[0] + 2./60, decim[-1]- 2./60)
         ax.get_xaxis().get_major_formatter().set_useOffset(False)
         ax.get_yaxis().get_major_formatter().set_useOffset(False)
         #######################################################################
@@ -105,11 +105,12 @@ def plot():
             stpop.append(valstr)
         line1 = "{0} ({1})".format(galaxy.replace("_", "\_").upper(), run)
         line2 = "{0:18s}, {1}".format(vstr, sigstr)
-        plt.figtext(0.20, 0.9, line1, color="w")
-        plt.figtext(0.20, 0.84, line2, color="w", fontsize=14)
-        plt.figtext(0.20, 0.25, stpop[0]+"Gyr", color="w", fontsize=14)
-        plt.figtext(0.60, 0.18, stpop[1], color="w", fontsize=14)
-        plt.figtext(0.20, 0.18, stpop[2], color="w", fontsize=14)
+        plt.figtext(0.20, 0.9, line1, color="w", fontsize=20)
+        plt.figtext(0.20, 0.84, line2, color="w", fontsize=15)
+        plt.figtext(0.20, 0.25, stpop[0]+"Gyr", color="w", fontsize=15)
+        plt.figtext(0.60, 0.18, stpop[1], color="w", fontsize=15)
+        plt.figtext(0.20, 0.18, stpop[2], color="w", fontsize=15)
+        plt.locator_params(nbins=7)
         #######################################################################
         output = os.path.join(plots_dir, "stamps/{0}.png".format(
                  spec.replace(".fits", "")))
@@ -132,8 +133,9 @@ if __name__ == "__main__":
     mpl.rcParams['text.latex.preamble'] = [r'\boldmath']
     wdir = os.path.join(home, "images/dss")
     os.chdir(wdir)
-    # plot()
-    prepare_figures()
+    # download_images()
+    plot()
+    # prepare_figures()
 
 
 
